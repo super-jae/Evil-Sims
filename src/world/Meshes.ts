@@ -50,7 +50,7 @@ export function rbox(w: number, h: number, d: number, r: number, mat: string | T
   const bevel = Math.min(r * 0.4, 0.018)
   const geo = new THREE.ExtrudeGeometry(roundedRect(w, h, r), {
     depth: Math.max(0.001, d - bevel * 2), bevelEnabled: true, bevelThickness: bevel,
-    bevelSize: bevel, bevelSegments: 2, curveSegments: 4,
+    bevelSize: bevel, bevelSegments: 3, curveSegments: 6,
   })
   geo.translate(0, 0, -d / 2 + bevel)
   geo.computeVertexNormals()

@@ -94,6 +94,8 @@ export class Sim {
   private voiceTimer = 0
   /** Seconds of remaining mouth movement from speech. */
   private talkTimer = 0
+  /** Where the sim was last frame, for locking the walk cycle to real travel. */
+  private lastAvatarPos = new THREE.Vector3()
 
   constructor(name: string, surname: string, look: SimLook, traitIds: string[], lifespan: number) {
     this.name = name
@@ -734,8 +736,12 @@ export class Sim {
     this.avatar.root.rotation.y = this.facing
 
     const speed = this.anim === 'run' ? 2 : 1
+    // ground distance covered since the last frame drives the walk cycle
+    const moved = Math.hypot(this.pos.x - this.lastAvatarPos.x, this.pos.z - this.lastAvatarPos.z)
+    this.lastAvatarPos.copy(this.pos)
+    const locomotion = this.anim === 'walk' || this.anim === 'run'
     this.avatar.setExpression(this.expressionFor())
-    this.avatar.update(dtReal, this.anim, speed)
+    this.avatar.update(dtReal, this.anim, speed, 9, locomotion ? moved : -1)
     const now = performance.now() * 0.001
     this.avatar.setMouth(
       this.talkTimer > 0 ? 0.28 + Math.sin(now * 19 + this.id) * 0.26 :

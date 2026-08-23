@@ -130,22 +130,34 @@ alive.
 
 ## Technical notes
 
-Everything is generated at runtime, so the whole game is one ~200 KB gzipped bundle with
-no asset loading:
+Everything is generated at runtime, so the whole game is one ~245 KB gzipped bundle with
+no asset loading (about 40 KB of that is SMAA's lookup textures):
 
 - **Textures** — grass, wood, ceramic, carpet, concrete, marble and plaster are drawn to
   canvases with value-noise and FBM at boot.
+  Their luminance is then run through a Sobel filter to derive tangent-space normal
+  maps and through a ramp to derive roughness variation, so grout, grain, pile and
+  plaster tooth all catch light rather than being painted-on color.
 - **Meshes** — ~45 objects and the sims themselves are built from primitives. Sims use a
   hand-built joint hierarchy with 24 hand-authored procedural animation poses that blend
-  into each other, plus blinking, head tracking and mouth shapes.
-- **Sound** — a Web Audio synthesiser. Adaptive music (calm / tense / chaos / dirge) that
+  into each other. The walk cycle is driven by distance traveled rather than by time,
+  so feet stay planted instead of skating when a sim speeds up or slows down.
+- **Faces** — a driven rig rather than a fixed mesh: brows move and tilt at the inner
+  ends, eyes squint or widen, the jaw drops, and the mouth is a torus arc that flips and
+  deepens between a smile and a frown. Eight expressions ease into one another and are
+  chosen from sim state — mood, rage, embarrassment, hysteria, exhaustion, panic, fire,
+  death — with speech driving the mouth on top of whatever expression is showing.
+- **Sound** — a Web Audio synthesizer. Adaptive music (calm / tense / chaos / dirge) that
   follows what is happening on the lot, formant-filtered nonsense speech with a per-sim
   voice, and every sound effect built from oscillators and filtered noise.
-- **Rendering** — ACES tone mapping, PCF soft shadows, a full day/night cycle with a
-  procedural sky and stars, bloom, a heat-shimmer grade that responds to how much of the
-  lot is on fire, a custom animated water shader with caustics, a GPU particle system and
-  instanced decals for puddles and scorch marks. Resolution scales adaptively to hold
-  frame rate.
+- **Rendering** — ACES tone mapping, ground-contact ambient occlusion, PCF soft shadows
+  from a frustum that follows the camera and snaps to the texel grid, a full day/night
+  cycle with a procedural sky and stars, subsurface-approximating skin shading, threshold
+  bloom over the HDR buffer, tilt-shift defocus for the dollhouse framing, SMAA, a
+  heat-shimmer grade that responds to how much of the lot is on fire, a custom animated
+  water shader with caustics, a GPU particle system and instanced decals for puddles and
+  scorch marks. Resolution scales adaptively to hold frame rate, dropping ambient
+  occlusion, defocus and anti-aliasing first.
 
 ## Architecture
 
@@ -174,3 +186,9 @@ would be dishonest to claim otherwise. What it does do is run the whole thing �
 rendering, animation, audio and simulation — procedurally, at 60fps, in a tab, with the
 Sims-style camera and interaction model intact, and with a systems layer built
 specifically around the thing you actually asked for.
+
+The technique gap has since been closed as far as it usefully can be: ambient occlusion,
+derived normal and roughness maps, subsurface skin shading, a driven facial rig,
+tilt-shift defocus, sharper shadows and a gait-locked walk cycle. What remains is the
+part no amount of technique substitutes for — sculpted heads, painted texture sets, and a
+hand-authored animation library.

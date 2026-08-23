@@ -1,10 +1,11 @@
 import * as THREE from 'three'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js'
 
 /** Color keyframes for the day/night cycle, keyed by hour. */
 interface SkyKey {
@@ -78,6 +79,190 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
 }`
 
+
+/**
+ * Threshold bloom over an HDR buffer.
+ *
+ * The stock UnrealBloomPass ignored its threshold entirely against this
+ * composer's half-float target — every lit surface bloomed to white no matter
+ * how high the threshold went, which points at non-finite values reaching the
+ * high-pass. This does the same job in three render targets at half resolution,
+ * clamps the input so an Inf cannot poison the blur, and only lets genuinely
+ * emissive things through: fire, screens, the plumbob, the sun.
+ */
+class BloomPass extends Pass {
+  strength: number
+  threshold: number
+
+  private rtBright: THREE.WebGLRenderTarget
+  private rtA: THREE.WebGLRenderTarget
+  private rtB: THREE.WebGLRenderTarget
+  private brightMat: THREE.ShaderMaterial
+  private blurMat: THREE.ShaderMaterial
+  private compositeMat: THREE.ShaderMaterial
+  private fsq: FullScreenQuad
+
+  constructor(width: number, height: number, strength = 0.8, threshold = 1.15) {
+    super()
+    this.strength = strength
+    this.threshold = threshold
+    const opts = { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false }
+    const w = Math.max(1, Math.floor(width / 2))
+    const h = Math.max(1, Math.floor(height / 2))
+    this.rtBright = new THREE.WebGLRenderTarget(w, h, opts)
+    this.rtA = new THREE.WebGLRenderTarget(w, h, opts)
+    this.rtB = new THREE.WebGLRenderTarget(w, h, opts)
+
+    const quadVert = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`
+
+    this.brightMat = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, uThreshold: { value: threshold } },
+      vertexShader: quadVert,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float uThreshold;
+        varying vec2 vUv;
+        void main() {
+          vec3 c = texture2D(tDiffuse, vUv).rgb;
+          // hard clamp: keeps an Inf or a runaway highlight from smearing the
+          // whole frame once it is blurred
+          c = min(max(c, vec3(0.0)), vec3(48.0));
+          float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          float contrib = max(0.0, l - uThreshold) / max(l, 1e-4);
+          gl_FragColor = vec4(c * contrib, 1.0);
+        }`,
+      depthTest: false, depthWrite: false,
+    })
+
+    this.blurMat = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, uDir: { value: new THREE.Vector2() } },
+      vertexShader: quadVert,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform vec2 uDir;
+        varying vec2 vUv;
+        void main() {
+          vec4 sum = texture2D(tDiffuse, vUv) * 0.2270270270;
+          sum += texture2D(tDiffuse, vUv + uDir * 1.3846153846) * 0.3162162162;
+          sum += texture2D(tDiffuse, vUv - uDir * 1.3846153846) * 0.3162162162;
+          sum += texture2D(tDiffuse, vUv + uDir * 3.2307692308) * 0.0702702703;
+          sum += texture2D(tDiffuse, vUv - uDir * 3.2307692308) * 0.0702702703;
+          gl_FragColor = sum;
+        }`,
+      depthTest: false, depthWrite: false,
+    })
+
+    this.compositeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null }, tBloom: { value: null },
+        uStrength: { value: strength }, uDebug: { value: 0 },
+      },
+      vertexShader: quadVert,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tBloom;
+        uniform float uStrength;
+        uniform float uDebug;
+        varying vec2 vUv;
+        void main() {
+          vec4 base = texture2D(tDiffuse, vUv);
+          vec3 bloom = texture2D(tBloom, vUv).rgb;
+          gl_FragColor = vec4(mix(base.rgb + bloom * uStrength, bloom, uDebug), base.a);
+        }`,
+      depthTest: false, depthWrite: false,
+    })
+
+    this.fsq = new FullScreenQuad(this.brightMat)
+  }
+
+  /** Renders only the bloom contribution, for diagnosing thresholds. */
+  set debug(on: boolean) { this.compositeMat.uniforms.uDebug.value = on ? 1 : 0 }
+
+  setSize(width: number, height: number) {
+    const w = Math.max(1, Math.floor(width / 2))
+    const h = Math.max(1, Math.floor(height / 2))
+    this.rtBright.setSize(w, h)
+    this.rtA.setSize(w, h)
+    this.rtB.setSize(w, h)
+  }
+
+  private draw(renderer: THREE.WebGLRenderer, mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null) {
+    this.fsq.material = mat
+    renderer.setRenderTarget(target)
+    // EffectComposer turns autoClear off, so be explicit
+    if (target) renderer.clear(true, false, false)
+    this.fsq.render(renderer)
+  }
+
+  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget,
+    readBuffer: THREE.WebGLRenderTarget) {
+    const w = this.rtBright.width, h = this.rtBright.height
+
+    this.brightMat.uniforms.tDiffuse.value = readBuffer.texture
+    this.brightMat.uniforms.uThreshold.value = this.threshold
+    this.draw(renderer, this.brightMat, this.rtBright)
+
+    // two separable passes, widening on the second for a softer falloff
+    let src: THREE.WebGLRenderTarget = this.rtBright
+    for (const scale of [1, 2.4]) {
+      ;(this.blurMat.uniforms.uDir.value as THREE.Vector2).set(scale / w, 0)
+      this.blurMat.uniforms.tDiffuse.value = src.texture
+      this.draw(renderer, this.blurMat, this.rtA)
+      ;(this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0, scale / h)
+      this.blurMat.uniforms.tDiffuse.value = this.rtA.texture
+      this.draw(renderer, this.blurMat, this.rtB)
+      src = this.rtB
+    }
+
+    this.compositeMat.uniforms.tDiffuse.value = readBuffer.texture
+    this.compositeMat.uniforms.tBloom.value = src.texture
+    this.compositeMat.uniforms.uStrength.value = this.strength
+    this.draw(renderer, this.compositeMat, this.renderToScreen ? null : writeBuffer)
+  }
+
+  dispose() {
+    this.rtBright.dispose(); this.rtA.dispose(); this.rtB.dispose()
+    this.brightMat.dispose(); this.blurMat.dispose(); this.compositeMat.dispose()
+    this.fsq.dispose()
+  }
+}
+
+/**
+ * Separable tilt-shift blur. Sharpness is a horizontal band on screen and
+ * everything above and below it defocuses, which is what gives the Sims its
+ * dollhouse feel. Screen-space rather than depth-based, so it costs one extra
+ * texture read pass and needs no depth buffer.
+ */
+const TiltShiftShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    uDir: { value: new THREE.Vector2(1 / 1024, 0) },
+    uAmount: { value: 3.0 },
+    uFocus: { value: 0.55 },
+    uRange: { value: 0.22 },
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform vec2 uDir;
+    uniform float uAmount, uFocus, uRange;
+    varying vec2 vUv;
+    void main() {
+      float d = abs(vUv.y - uFocus);
+      float coc = clamp((d - uRange) / max(0.0001, 1.0 - uRange), 0.0, 1.0);
+      float r = pow(coc, 1.5) * uAmount;
+      if (r < 0.3) { gl_FragColor = texture2D(tDiffuse, vUv); return; }
+      vec2 s = uDir * r;
+      // 5-tap linear-sampled gaussian
+      vec4 sum = texture2D(tDiffuse, vUv) * 0.2270270270;
+      sum += texture2D(tDiffuse, vUv + s * 1.3846153846) * 0.3162162162;
+      sum += texture2D(tDiffuse, vUv - s * 1.3846153846) * 0.3162162162;
+      sum += texture2D(tDiffuse, vUv + s * 3.2307692308) * 0.0702702703;
+      sum += texture2D(tDiffuse, vUv - s * 3.2307692308) * 0.0702702703;
+      gl_FragColor = sum;
+    }`,
+}
+
 /** Cheap vignette + subtle chromatic warmth applied after bloom. */
 const GradeShader = {
   uniforms: {
@@ -123,8 +308,11 @@ export class Engine {
 
   private skyMat!: THREE.ShaderMaterial
   private grade!: ShaderPass
-  private bloom!: UnrealBloomPass
+  private bloom!: BloomPass
   private gtao!: GTAOPass
+  private tiltH!: ShaderPass
+  private tiltV!: ShaderPass
+  private smaa!: SMAAPass
   /** Unit vector pointing from the lot toward the sun. */
   private sunDir = new THREE.Vector3(0.4, 0.8, 0.3)
   private shadowHalf = 24
@@ -200,7 +388,11 @@ export class Engine {
     const size = new THREE.Vector2()
     this.renderer.getSize(size)
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, {
-      type: THREE.HalfFloatType, samples: 4, colorSpace: THREE.LinearSRGBColorSpace,
+      // No MSAA here on purpose: an unresolved multisample target fed garbage
+      // to the bloom's bright pass wherever geometry was small and detailed,
+      // which blew every sim out to white. SMAA at the end of the chain does
+      // the anti-aliasing instead.
+      type: THREE.HalfFloatType, samples: 0, colorSpace: THREE.LinearSRGBColorSpace,
     })
     this.composer = new EffectComposer(this.renderer, rt)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
@@ -216,11 +408,28 @@ export class Engine {
     this.gtao.updatePdMaterial({ lumaPhi: 8, depthPhi: 2, normalPhi: 4, radius: 3, rings: 2, samples: 12 })
     this.composer.addPass(this.gtao)
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.34, 0.58, 0.92)
+    // Runs on the linear HDR buffer, before tone mapping, so the threshold sits
+    // above ordinary sunlit diffuse and only emissive things glow.
+    this.bloom = new BloomPass(size.x, size.y, 0.7, 2.6)
     this.composer.addPass(this.bloom)
     this.grade = new ShaderPass(GradeShader)
     this.composer.addPass(this.grade)
+
+    // two passes so the blur is separable; each needs its own uniform set
+    const tilt = () => new ShaderPass({
+      ...TiltShiftShader,
+      uniforms: THREE.UniformsUtils.clone(TiltShiftShader.uniforms),
+    })
+    this.tiltH = tilt()
+    this.tiltV = tilt()
+    this.composer.addPass(this.tiltH)
+    this.composer.addPass(this.tiltV)
+    this.setTiltShift(3.0)
+
     this.composer.addPass(new OutputPass())
+
+    this.smaa = new SMAAPass(size.x, size.y)
+    this.composer.addPass(this.smaa)
 
     this.resize()
     window.addEventListener('resize', () => this.resize())
@@ -234,8 +443,12 @@ export class Engine {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.pixelRatioCap))
     this.renderer.setSize(w, h, false)
     this.composer.setSize(w, h)
-    this.bloom.resolution.set(w, h)
+    this.bloom?.setSize(w, h)
     this.gtao?.setSize(w, h)
+    if (this.tiltH) {
+      ;(this.tiltH.uniforms.uDir.value as THREE.Vector2).set(1 / w, 0)
+      ;(this.tiltV.uniforms.uDir.value as THREE.Vector2).set(0, 1 / h)
+    }
   }
 
   /** Reduce resolution when the frame budget is blown (called by the game loop). */
@@ -243,8 +456,11 @@ export class Engine {
     const target = Math.max(0.7, Math.min(2, window.devicePixelRatio * scale))
     if (Math.abs(target - this.pixelRatioCap) < 0.05) return
     this.pixelRatioCap = target
-    // ambient occlusion is the first thing to go when the frame budget is tight
+    // ambient occlusion and defocus are the first things to go when the frame
+    // budget is tight
     this.gtao.enabled = scale > 0.82
+    this.tiltH.enabled = this.tiltV.enabled = scale > 0.72
+    this.smaa.enabled = scale > 0.75
     this.resize()
   }
 
@@ -270,6 +486,19 @@ export class Engine {
   }
 
   setAOEnabled(on: boolean) { this.gtao.enabled = on }
+
+  /**
+   * `amount` is the maximum blur radius in pixels; `focus` and `range` are the
+   * center and half-height of the sharp band in normalized screen space.
+   */
+  setTiltShift(amount: number, focus = 0.56, range = 0.2) {
+    for (const p of [this.tiltH, this.tiltV]) {
+      p.uniforms.uAmount.value = amount
+      p.uniforms.uFocus.value = focus
+      p.uniforms.uRange.value = range
+      p.enabled = amount > 0.05
+    }
+  }
 
   /** Blend the sky, sun and ambient lighting to match the in-game hour. */
   setTimeOfDay(hour: number) {
@@ -308,7 +537,7 @@ export class Engine {
     g.uHeat.value += (this.heat - g.uHeat.value) * Math.min(1, dt * 2)
     g.uDesat.value += (this.desat - g.uDesat.value) * Math.min(1, dt * 3)
     g.uTime.value += dt
-    this.bloom.strength = 0.34 + this.heat * 0.5
+    this.bloom.strength = 0.7 + this.heat * 1.1
     this.composer.render(dt)
   }
 }

@@ -117,6 +117,11 @@ export class SimAvatar {
   private ghostMode = false
 
   private phase = Math.random() * 10
+  /**
+   * Walk cycle position, advanced by distance traveled rather than by time,
+   * so feet stay planted instead of skating when the sim's speed changes.
+   */
+  private gait = Math.random() * 10
   private blinkTimer = Math.random() * 4
   /** Vertical offset applied by the current animation (crouching, sitting, swimming). */
   private yOffset = 0
@@ -142,7 +147,7 @@ export class SimAvatar {
   }
 
   private limb(parent: THREE.Object3D, len: number, r: number, m: THREE.Material, taper = 0.86) {
-    const geo = new THREE.CapsuleGeometry(r, Math.max(0.001, len - r * 2), 4, 10)
+    const geo = new THREE.CapsuleGeometry(r, Math.max(0.001, len - r * 2), 6, 14)
     const mesh = new THREE.Mesh(geo, m)
     mesh.position.y = -len / 2
     mesh.scale.z = taper
@@ -168,33 +173,33 @@ export class SimAvatar {
 
     // hips ------------------------------------------------------------------
     const hips = this.addJoint('hips', this.body, 0, 0.88 * s, 0)
-    const pelvis = new THREE.Mesh(new THREE.CapsuleGeometry(0.13 * bw, 0.1, 4, 12), pantsM)
+    const pelvis = new THREE.Mesh(new THREE.CapsuleGeometry(0.13 * bw, 0.1, 6, 16), pantsM)
     pelvis.scale.z = 0.72
     pelvis.castShadow = true
     hips.add(pelvis)
 
     // torso -----------------------------------------------------------------
     const spine = this.addJoint('spine', hips, 0, 0.06 * s, 0)
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.155 * bw, 0.3 * s, 5, 14), shirtM)
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.155 * bw, 0.3 * s, 6, 18), shirtM)
     torso.position.y = 0.22 * s
     torso.scale.set(1, 1, 0.66)
     torso.castShadow = true
     torso.receiveShadow = true
     spine.add(torso)
     // collar
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.05, 12), shirtM)
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.05, 16), shirtM)
     collar.position.y = 0.44 * s
     spine.add(collar)
 
     // head ------------------------------------------------------------------
     const neck = this.addJoint('neck', spine, 0, 0.44 * s, 0)
-    const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.07, 10), skinM)
+    const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.07, 14), skinM)
     neckMesh.position.y = 0.03
     neck.add(neckMesh)
 
     const head = this.addJoint('head', neck, 0, 0.08 * s, 0)
     this.headGroup = head as THREE.Group
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.135, 20, 16), skinM)
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.135, 26, 20), skinM)
     skull.scale.set(0.94, 1.08, 0.98)
     skull.position.y = 0.1
     skull.castShadow = true
@@ -304,7 +309,7 @@ export class SimAvatar {
       this.limb(shoulder, 0.28 * s, 0.048, shirtM)
       const elbow = this.addJoint(`fore${side}`, shoulder, 0, -0.28 * s, 0)
       this.limb(elbow, 0.26 * s, 0.042, skinM)
-      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), skinM)
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), skinM)
       hand.scale.set(0.8, 1.1, 0.6)
       hand.position.y = -0.27 * s
       hand.castShadow = true
@@ -380,14 +385,14 @@ export class SimAvatar {
   // ---------------------------------------------------------------- poses
 
   private pose(anim: AnimName, t: number, speed: number): Pose {
-    const w = t * 8 * Math.max(0.4, speed)
-    const sw = Math.sin(w), cw = Math.cos(w)
     const breathe = Math.sin(t * 1.6) * 0.03
 
     switch (anim) {
       case 'walk':
       case 'run': {
         const amp = anim === 'run' ? 1.5 : 1
+        const w = this.gait
+        const sw = Math.sin(w)
         this.yOffsetTarget = Math.abs(Math.sin(w)) * 0.035 * amp
         this.leanTarget = anim === 'run' ? 0.22 : 0.06
         return {
@@ -689,9 +694,19 @@ export class SimAvatar {
     }
   }
 
-  /** Advance the animation. `speed` is meters/second for locomotion blends. */
-  update(dt: number, anim: AnimName, speed: number, blend = 9) {
+  /**
+   * Advance the animation. `distance` is how far the sim actually moved this
+   * frame, in meters; passing it locks the walk cycle to ground travel so feet
+   * stay planted instead of skating.
+   */
+  update(dt: number, anim: AnimName, speed: number, blend = 9, distance = -1) {
     this.phase += dt
+    if (distance >= 0) {
+      // one full two-step cycle per 1.35 m of travel
+      this.gait += distance * (Math.PI * 2 / 1.35)
+    } else {
+      this.gait += dt * 8 * Math.max(0.4, speed)
+    }
     const target = this.pose(anim, this.phase, speed)
     const k = 1 - Math.pow(0.0001, dt * (blend / 9))
 
