@@ -22,6 +22,8 @@ export interface Task {
   elapsed: number
   /** Emergency tasks cannot be displaced by autonomy. */
   priority: number
+  /** In-game minutes spent walking to `stand`, for the stuck watchdog. */
+  routeElapsed?: number
   onFinish?: (sim: Sim, game: IGame) => void
   onTick?: (sim: Sim, game: IGame, dtMin: number) => void
   tag?: string
@@ -429,6 +431,7 @@ export class Sim {
       if (!task.stand) { task.phase = 'perform'; this.path = null }
       else if (this.arrivedAt(game, task.stand)) {
         task.phase = 'perform'
+        task.routeElapsed = 0
         this.path = null
         if (task.obj) {
           task.obj.inUseBy = this
@@ -439,7 +442,29 @@ export class Sim {
         }
       } else {
         this.ensurePath(game, task.stand)
-        this.anim = this.inPool ? 'swim' : (this.panicTimer > 0 ? 'run' : 'walk')
+
+        // Watchdog: no route may run forever. Without this, a task whose goal
+        // becomes unreachable mid-walk leaves the sim jogging on the spot.
+        task.routeElapsed = (task.routeElapsed ?? 0) + dtMin
+        if (task.routeElapsed > 120) {
+          if (task.priority < 8) {
+            this.rage += 2 * this.traits.temper
+            this.say('I give up.', 3)
+            this.clearTask(game)
+          } else {
+            // an emergency still has to happen, so do it where they stand
+            task.stand = null
+            task.phase = 'perform'
+            this.path = null
+          }
+          return
+        }
+
+        // Only animate locomotion when there is actually a step to take.
+        const walking = !!this.path && this.pathIndex < this.path.length
+        this.anim = this.inPool ? 'swim'
+          : walking ? (this.panicTimer > 0 ? 'run' : 'walk')
+          : (this.panicTimer > 0 ? 'panic' : 'idle')
         return
       }
     }
@@ -664,14 +689,18 @@ export class Sim {
     const p = game.grid.findPath(t.x, t.z, goal.x, goal.z, { avoidPool: avoid, allowSolidGoal: true })
     if (!p) {
       this.repathCooldown = 40
-      // stuck: give up on this task
+      // unreachable: give up on this task
       if (this.task && this.task.priority < 8) {
         this.rage += 1.5 * this.traits.temper
         this.clearTask(game)
       }
       return
     }
-    this.path = p
+    // An empty path means the sim is already standing in the goal tile, but it
+    // may be off-center after an interrupted walk - close enough to path to,
+    // too far to count as arrived. Give it the tile center as a waypoint so it
+    // finishes the last step instead of walking on the spot forever.
+    this.path = p.length ? p : [{ x: goal.x, z: goal.z }]
     this.pathIndex = 0
   }
 
