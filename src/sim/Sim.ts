@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { SimAvatar, type SimLook } from './SimMesh'
+import { SimAvatar, type SimLook, type Expression } from './SimMesh'
 import { NEED_KEYS, NEED_META, makeNeeds, clampNeeds, needScore, moodFor, type NeedKey, type Needs } from './Needs'
 import { bundleTraits, type TraitBundle } from './Traits'
 import type { AnimName, Interaction, InteractionCtx, SkillKey } from '../world/ObjectTypes'
@@ -35,7 +35,7 @@ export interface Buff {
   minutesLeft: number
 }
 
-const WALK_SPEED = 1.35      // metres per in-game minute
+const WALK_SPEED = 1.35      // meters per in-game minute
 const RUN_SPEED = 2.9
 const SWIM_SPEED = 0.72
 
@@ -92,6 +92,8 @@ export class Sim {
 
   private stepTimer = 0
   private voiceTimer = 0
+  /** Seconds of remaining mouth movement from speech. */
+  private talkTimer = 0
 
   constructor(name: string, surname: string, look: SimLook, traitIds: string[], lifespan: number) {
     this.name = name
@@ -514,7 +516,9 @@ export class Sim {
           if (g.rand.next() < dt * 0.09) {
             const speaker = g.rand.chance(0.5) ? sim : partner
             const mood = speaker.moodScore > 65 ? 'happy' : speaker.moodScore < 30 ? 'sad' : 'neutral'
-            audio.speak(speaker.id * 37 + 11, 2 + Math.floor(g.rand.next() * 3), mood, speaker.pos)
+            const syllables = 2 + Math.floor(g.rand.next() * 3)
+            audio.speak(speaker.id * 37 + 11, syllables, mood, speaker.pos)
+            speaker.talkTimer = syllables * 0.16
           }
         },
       }
@@ -700,8 +704,23 @@ export class Sim {
     this.facingGoal = Math.atan2(p.x - this.pos.x, p.z - this.pos.z)
   }
 
+  /** Which face this sim should be wearing right now. */
+  private expressionFor(): Expression {
+    if (this.dead) return 'dead'
+    if (this.burning > 0 || this.panicTimer > 0) return 'scared'
+    if (this.anim === 'laugh' || this.hysteria > 60) return 'laugh'
+    if (this.anim === 'cry' || this.embarrassment > 60) return 'sad'
+    if (this.rage > 55) return 'angry'
+    if (this.anim === 'sleep' || this.needs.energy < 18 || this.hasBuff('sleepless')) return 'tired'
+    const m = this.moodScore
+    if (m > 70) return 'happy'
+    if (m < 34) return 'sad'
+    return 'neutral'
+  }
+
   private updateAvatar(game: IGame, dtReal: number) {
     this.voiceTimer -= dtReal
+    this.talkTimer -= dtReal
     // smooth turn
     let diff = this.facingGoal - this.facing
     while (diff > Math.PI) diff -= Math.PI * 2
@@ -715,22 +734,27 @@ export class Sim {
     this.avatar.root.rotation.y = this.facing
 
     const speed = this.anim === 'run' ? 2 : 1
+    this.avatar.setExpression(this.expressionFor())
     this.avatar.update(dtReal, this.anim, speed)
+    const now = performance.now() * 0.001
     this.avatar.setMouth(
-      this.anim === 'eat' ? 0.5 + Math.sin(performance.now() * 0.01) * 0.3 :
-      this.anim === 'panic' || this.anim === 'burn' ? 0.9 :
-      this.anim === 'laugh' ? 0.7 : 0)
+      this.talkTimer > 0 ? 0.28 + Math.sin(now * 19 + this.id) * 0.26 :
+      this.anim === 'eat' ? 0.5 + Math.sin(now * 10) * 0.3 :
+      this.anim === 'panic' || this.anim === 'burn' ? 0.9 : 0)
 
     // idle chatter
     if (this.voiceTimer <= 0 && Math.random() < dtReal * 0.05) {
       const emotion = this.moodScore > 65 ? 'happy' : this.moodScore < 30 ? 'sad' : 'neutral'
-      audio.speak(this.id * 37 + 11, 2 + Math.floor(Math.random() * 3), emotion, this.pos)
+      const syllables = 2 + Math.floor(Math.random() * 3)
+      audio.speak(this.id * 37 + 11, syllables, emotion, this.pos)
+      this.talkTimer = syllables * 0.16
       this.voiceTimer = 5 + Math.random() * 8
     }
   }
 
   private updateGhost(dtMin: number, dtReal: number) {
     if (!this.isGhost) return
+    this.avatar.setExpression('dead')
     this.pos.y = 0.55 + Math.sin(performance.now() * 0.0012 + this.id) * 0.22
     this.avatar.root.position.copy(this.pos)
     this.avatar.root.rotation.y += dtReal * 0.25

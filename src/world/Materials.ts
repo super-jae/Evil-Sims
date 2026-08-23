@@ -22,7 +22,8 @@ function fbm(x: number, y: number, seed: number, octaves = 4) {
 function makeCanvas(size: number) {
   const c = document.createElement('canvas')
   c.width = c.height = size
-  return { c, g: c.getContext('2d')! }
+  // these canvases are read back several times to derive normal and roughness maps
+  return { c, g: c.getContext('2d', { willReadFrequently: true })! }
 }
 
 function finish(c: HTMLCanvasElement, repeat: number, aniso = 8): THREE.Texture {
@@ -36,10 +37,10 @@ function finish(c: HTMLCanvasElement, repeat: number, aniso = 8): THREE.Texture 
 }
 
 /**
- * Derives a tangent-space normal map from a colour canvas by treating its
+ * Derives a tangent-space normal map from a color canvas by treating its
  * luminance as a height field and running a Sobel filter over it. Costs one
  * pass at boot and gives every procedural surface real relief under lighting,
- * which is most of what separates "flat coloured shape" from "material".
+ * which is most of what separates "flat colored shape" from "material".
  */
 function normalFromCanvas(c: HTMLCanvasElement, strength: number, repeat: number): THREE.Texture {
   const g = c.getContext('2d')!
@@ -257,7 +258,7 @@ function plasterTexture(tint: [number, number, number]): HTMLCanvasElement {
 }
 
 /**
- * Builds a full PBR material from one procedural canvas: colour, derived
+ * Builds a full PBR material from one procedural canvas: color, derived
  * normal relief and derived roughness variation, all from the same source.
  */
 function surface(c: HTMLCanvasElement, o: {

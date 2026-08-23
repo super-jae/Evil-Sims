@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
 
-/** Colour keyframes for the day/night cycle, keyed by hour. */
+/** Color keyframes for the day/night cycle, keyed by hour. */
 interface SkyKey {
   hour: number
   top: THREE.Color
@@ -135,7 +135,7 @@ export class Engine {
 
   /** 0..1 — how much of the lot is currently ablaze; drives the heat shimmer. */
   heat = 0
-  /** 0..1 — drains colour out of the world during a death sequence. */
+  /** 0..1 — drains color out of the world during a death sequence. */
   desat = 0
 
   constructor(canvas: HTMLCanvasElement) {
@@ -216,7 +216,7 @@ export class Engine {
     this.gtao.updatePdMaterial({ lumaPhi: 8, depthPhi: 2, normalPhi: 4, radius: 3, rings: 2, samples: 12 })
     this.composer.addPass(this.gtao)
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.42, 0.62, 0.86)
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.34, 0.58, 0.92)
     this.composer.addPass(this.bloom)
     this.grade = new ShaderPass(GradeShader)
     this.composer.addPass(this.grade)
@@ -250,7 +250,7 @@ export class Engine {
 
   /**
    * Aims the shadow frustum at what the camera is looking at and shrinks it as
-   * you zoom in, so a fixed shadow map buys far more texels per metre. The
+   * you zoom in, so a fixed shadow map buys far more texels per meter. The
    * focus is snapped to the texel grid to stop shadow edges crawling as the
    * camera moves.
    */
@@ -308,7 +308,7 @@ export class Engine {
     g.uHeat.value += (this.heat - g.uHeat.value) * Math.min(1, dt * 2)
     g.uDesat.value += (this.desat - g.uDesat.value) * Math.min(1, dt * 3)
     g.uTime.value += dt
-    this.bloom.strength = 0.42 + this.heat * 0.5
+    this.bloom.strength = 0.34 + this.heat * 0.5
     this.composer.render(dt)
   }
 }

@@ -27,6 +27,8 @@ export class CameraRig {
 
   minDistance = 6
   maxDistance = 62
+  /** Height of the point the camera orbits and aims at. */
+  lookHeight = 0.9
   bounds = 30
   /** Set true to hide the roof/upper walls automatically when zoomed in low. */
   cutawayActive = false
@@ -85,10 +87,10 @@ export class CameraRig {
     const h = Math.cos(this.polar) * r
     this.camera.position.set(
       this.focus.x + Math.sin(this.azimuth) * h,
-      Math.max(1.2, y),
+      this.lookHeight + Math.max(0.15, y),
       this.focus.z + Math.cos(this.azimuth) * h,
     )
-    this.camera.lookAt(this.focus.x, 0.9, this.focus.z)
+    this.camera.lookAt(this.focus.x, this.lookHeight, this.focus.z)
 
     if (this.shakeAmp > 0.0005) {
       this.shakeTime += dt * 34

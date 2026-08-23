@@ -13,7 +13,11 @@ export interface SimLook {
 }
 
 export const SKIN_TONES = [0xf2d3b6, 0xe8bd97, 0xd9a476, 0xbb8154, 0x8d5a36, 0x64402a, 0xf7dfc8, 0xa8724a]
-export const HAIR_COLORS = [0x241a12, 0x4a2f1c, 0x7a4a22, 0xc4a05a, 0xe8d9a8, 0x8a8a8a, 0xd44a6a, 0x3a6ad4]
+// naturals repeated so dye jobs stay the exception rather than the rule
+export const HAIR_COLORS = [
+  0x241a12, 0x241a12, 0x36261a, 0x4a2f1c, 0x4a2f1c, 0x7a4a22,
+  0x9c6b34, 0xc4a05a, 0xe8d9a8, 0x8a8a8a, 0xb9b4ad, 0xd44a6a, 0x3a6ad4,
+]
 export const CLOTH_COLORS = [
   0x4a6fa5, 0x9a4048, 0x4d7a56, 0xd8a03a, 0x6a4a8a, 0x2e2e38,
   0xd8cdb4, 0x3a8a8a, 0xc4547a, 0x7a5a3a, 0x5a7ad4, 0xa8483a,
@@ -21,6 +25,67 @@ export const CLOTH_COLORS = [
 
 const mat = (color: number, rough = 0.8, metal = 0) =>
   new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal })
+
+/**
+ * Skin needs light to bleed around the terminator, otherwise faces read as
+ * painted plastic. This patches the standard direct-lighting term with a
+ * wrapped N.L plus a warm scattering lobe near grazing angles — the cheap
+ * stand-in for subsurface scattering that stylised characters actually want.
+ */
+function skinMaterial(color: number): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.66, metalness: 0 })
+  m.onBeforeCompile = (shader) => {
+    // onBeforeCompile hands over the shader with #include directives still
+    // unresolved, so patch the chunk source and inline it.
+    const chunk = THREE.ShaderChunk.lights_physical_pars_fragment
+    const patched = chunk.replace(
+      /float dotNL = saturate\( dot\( geometryNormal, directLight\.direction \) \);\s*vec3 irradiance = dotNL \* directLight\.color;/,
+      `float rawNL = dot( geometryNormal, directLight.direction );
+        float dotNL = saturate( ( rawNL + 0.42 ) / 1.42 );
+        vec3 scatter = vec3( 0.55, 0.17, 0.11 ) * pow( saturate( 1.0 - abs( rawNL ) ), 2.0 ) * 0.5;
+        vec3 irradiance = ( dotNL + scatter ) * directLight.color;`,
+    )
+    if (patched === chunk) {
+      console.warn('skinMaterial: lighting chunk did not match; skin shading is inactive')
+      return
+    }
+    const before = shader.fragmentShader
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <lights_physical_pars_fragment>', patched)
+    if (shader.fragmentShader === before) {
+      console.warn('skinMaterial: could not inline the lighting chunk; skin shading is inactive')
+    }
+  }
+  m.customProgramCacheKey = () => 'evilsims-skin'
+  return m
+}
+
+export type Expression =
+  | 'neutral' | 'happy' | 'sad' | 'angry' | 'scared' | 'tired' | 'laugh' | 'dead'
+
+interface FacePose {
+  /** Brow height offset in meters. */
+  brow: number
+  /** Inner-brow tilt; positive raises the inner ends (sadness). */
+  browTilt: number
+  /** 0 = wide open, 1 = fully closed. Negative widens the eyes. */
+  squint: number
+  /** -1 = deep frown, +1 = broad smile. */
+  smile: number
+  /** Mouth openness. */
+  open: number
+}
+
+const EXPRESSIONS: Record<Expression, FacePose> = {
+  neutral: { brow: 0, browTilt: 0, squint: 0, smile: 0.12, open: 0 },
+  happy: { brow: 0.010, browTilt: 0.05, squint: 0.28, smile: 1.0, open: 0.12 },
+  sad: { brow: 0.006, browTilt: 0.42, squint: 0.12, smile: -0.85, open: 0 },
+  angry: { brow: -0.012, browTilt: -0.55, squint: 0.42, smile: -0.55, open: 0.1 },
+  scared: { brow: 0.016, browTilt: 0.22, squint: -0.45, smile: -0.35, open: 0.62 },
+  tired: { brow: -0.004, browTilt: 0.18, squint: 0.58, smile: -0.28, open: 0.06 },
+  laugh: { brow: 0.012, browTilt: 0.05, squint: 0.72, smile: 1.0, open: 0.8 },
+  dead: { brow: 0, browTilt: 0, squint: 0.92, smile: -0.2, open: 0.22 },
+}
 
 interface Joint { obj: THREE.Object3D; base: THREE.Euler }
 
@@ -37,7 +102,17 @@ export class SimAvatar {
   private headGroup!: THREE.Group
   private eyeL!: THREE.Mesh
   private eyeR!: THREE.Mesh
-  private mouth!: THREE.Mesh
+  private browL!: THREE.Mesh
+  private browR!: THREE.Mesh
+  private mouthArc!: THREE.Mesh
+  private mouthOpen!: THREE.Mesh
+  private jaw!: THREE.Mesh
+  private browBaseY = 0
+  private jawBaseY = 0
+  private face: FacePose = { ...EXPRESSIONS.neutral }
+  private faceGoal: FacePose = { ...EXPRESSIONS.neutral }
+  /** Extra mouth opening layered on top of the expression (talking, eating). */
+  private mouthDrive = 0
   private plumbob!: THREE.Mesh
   private ghostMode = false
 
@@ -80,7 +155,7 @@ export class SimAvatar {
   private build() {
     const L = this.look
     const s = L.height
-    const skinM = mat(L.skin, 0.68)
+    const skinM = skinMaterial(L.skin)
     const hairM = mat(L.hair, 0.72)
     const shirtM = mat(L.shirt, 0.88)
     const pantsM = mat(L.pants, 0.9)
@@ -124,10 +199,13 @@ export class SimAvatar {
     skull.position.y = 0.1
     skull.castShadow = true
     head.add(skull)
-    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), skinM)
+    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), skinM)
     jaw.scale.set(0.88, 0.7, 0.9)
     jaw.position.set(0, 0.035, 0.022)
+    jaw.castShadow = true
     head.add(jaw)
+    this.jaw = jaw
+    this.jawBaseY = jaw.position.y
 
     // ears
     for (const sx of [-1, 1]) {
@@ -152,29 +230,40 @@ export class SimAvatar {
     this.eyeL = mkEye(-1)
     this.eyeR = mkEye(1)
 
-    // brows
-    for (const sx of [-1, 1]) {
-      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.011, 0.012), hairM)
+    // brows — driven by expression, so keep handles on them
+    const mkBrow = (sx: number) => {
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.012, 0.013), hairM)
       brow.position.set(sx * 0.056, 0.15, 0.112)
       brow.rotation.z = sx * 0.12
       head.add(brow)
+      return brow
     }
+    this.browL = mkBrow(-1)
+    this.browR = mkBrow(1)
+    this.browBaseY = this.browL.position.y
 
     // nose + mouth
     const nose = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.05, 8), skinM)
     nose.rotation.x = Math.PI / 2
     nose.position.set(0, 0.075, 0.128)
     head.add(nose)
-    this.mouth = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), mat(0x8a4a4a, 0.5))
-    this.mouth.scale.set(1.1, 0.32, 0.4)
-    this.mouth.position.set(0, 0.028, 0.115)
-    head.add(this.mouth)
+    // Mouth is a torus arc so it can genuinely curve into a smile or a frown,
+    // plus a dark ellipsoid behind it for openness.
+    const lipM = mat(0x8a4a52, 0.5)
+    this.mouthOpen = new THREE.Mesh(new THREE.SphereGeometry(0.034, 14, 10), mat(0x40222a, 0.7))
+    this.mouthOpen.position.set(0, 0.026, 0.108)
+    this.mouthOpen.scale.set(1, 0.05, 0.5)
+    head.add(this.mouthOpen)
+    this.mouthArc = new THREE.Mesh(
+      new THREE.TorusGeometry(0.042, 0.0092, 6, 16, Math.PI), lipM)
+    this.mouthArc.position.set(0, 0.03, 0.113)
+    head.add(this.mouthArc)
 
     // hair
     switch (L.hairStyle) {
       case 0: { // short crop
-        const h = new THREE.Mesh(new THREE.SphereGeometry(0.144, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.62), hairM)
-        h.position.y = 0.1; h.scale.set(0.96, 1.12, 1.0); h.castShadow = true
+        const h = new THREE.Mesh(new THREE.SphereGeometry(0.144, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.58), hairM)
+        h.position.set(0, 0.1, -0.006); h.scale.set(0.98, 1.12, 1.02); h.castShadow = true
         head.add(h); break
       }
       case 1: { // bob
@@ -188,10 +277,17 @@ export class SimAvatar {
         }
         break
       }
-      case 2: { // tall / afro
-        const h = new THREE.Mesh(new THREE.SphereGeometry(0.175, 18, 14), hairM)
-        h.position.y = 0.145; h.scale.set(1.0, 0.95, 1.0); h.castShadow = true
-        head.add(h); break
+      case 2: { // tall / afro — sits on the skull rather than swallowing it
+        const h = new THREE.Mesh(new THREE.SphereGeometry(0.152, 20, 16), hairM)
+        h.position.set(0, 0.148, -0.012)
+        h.scale.set(1.06, 1.0, 1.04)
+        h.castShadow = true
+        head.add(h)
+        const back = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 10), hairM)
+        back.position.set(0, 0.06, -0.05)
+        back.scale.set(1.0, 0.9, 0.8)
+        head.add(back)
+        break
       }
       default: { // bald with a fringe of dignity
         const h = new THREE.Mesh(new THREE.TorusGeometry(0.118, 0.026, 6, 18), hairM)
@@ -593,7 +689,7 @@ export class SimAvatar {
     }
   }
 
-  /** Advance the animation. `speed` is metres/second for locomotion blends. */
+  /** Advance the animation. `speed` is meters/second for locomotion blends. */
   update(dt: number, anim: AnimName, speed: number, blend = 9) {
     this.phase += dt
     const target = this.pose(anim, this.phase, speed)
@@ -614,21 +710,61 @@ export class SimAvatar {
     this.body.position.y = this.yOffset
     this.body.rotation.x = this.lean
 
-    // blinking
+    // blinking, then the expression rig on top of it
     this.blinkTimer -= dt
     if (this.blinkTimer < 0) this.blinkTimer = 2 + Math.random() * 4
     const lidded = this.blinkTimer < 0.12 ? 0.1 : 1
-    this.eyeL.scale.y = 0.86 * lidded
-    this.eyeR.scale.y = 0.86 * lidded
+    this.updateFace(dt, lidded)
 
     // plumbob spin
     this.plumbob.rotation.y += dt * 1.5
     this.plumbob.position.y = 1.72 * this.look.height + 0.28 + Math.sin(this.phase * 2) * 0.03
   }
 
-  /** Open the mouth — used while talking, screaming or eating. */
-  setMouth(open: number) {
-    this.mouth.scale.set(1.1, 0.32 + open * 1.4, 0.4 + open * 0.4)
+  /** Extra mouth opening layered over the expression — talking, eating, screaming. */
+  setMouth(open: number) { this.mouthDrive = open }
+
+  setExpression(name: Expression) {
+    const target = EXPRESSIONS[name]
+    this.faceGoal.brow = target.brow
+    this.faceGoal.browTilt = target.browTilt
+    this.faceGoal.squint = target.squint
+    this.faceGoal.smile = target.smile
+    this.faceGoal.open = target.open
+  }
+
+  /** Eases the face toward its target pose and drives the rig from it. */
+  private updateFace(dt: number, lidded: number) {
+    const k = 1 - Math.pow(0.0006, dt)
+    const f = this.face, g = this.faceGoal
+    f.brow += (g.brow - f.brow) * k
+    f.browTilt += (g.browTilt - f.browTilt) * k
+    f.squint += (g.squint - f.squint) * k
+    f.smile += (g.smile - f.smile) * k
+    f.open += (g.open - f.open) * k
+
+    for (const [brow, side] of [[this.browL, -1], [this.browR, 1]] as [THREE.Mesh, number][]) {
+      brow.position.y = this.browBaseY + f.brow
+      // inner ends of the brows are the ones that move; sign flips per side
+      brow.rotation.z = side * 0.12 + side * f.browTilt * 0.5
+      brow.position.z = 0.112 - Math.abs(f.browTilt) * 0.004
+    }
+
+    const eyeOpen = Math.max(0.04, (1 - f.squint * 0.85)) * lidded
+    this.eyeL.scale.y = 0.86 * eyeOpen
+    this.eyeR.scale.y = 0.86 * eyeOpen
+
+    // arc flips between smile and frown; magnitude sets how pronounced it is
+    const smile = f.smile
+    this.mouthArc.rotation.z = smile >= 0 ? Math.PI : 0
+    const curve = 0.22 + Math.abs(smile) * 1.05
+    this.mouthArc.scale.set(1 + Math.abs(smile) * 0.22, curve, 1)
+    this.mouthArc.position.y = 0.03 - smile * 0.006
+
+    const open = Math.min(1.6, f.open + this.mouthDrive)
+    this.mouthOpen.scale.set(1 + open * 0.25, 0.05 + open * 0.95, 0.5 + open * 0.3)
+    this.mouthOpen.position.y = 0.026 - open * 0.012
+    this.jaw.position.y = this.jawBaseY - open * 0.016
   }
 
   lookAt(target: THREE.Vector3 | null) {
