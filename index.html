@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Evil Sims — A Household Simulator</title>
+    <meta name="description" content="A life simulation where the only goal is a creative, devious demise." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#128123;</text></svg>" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="viewport"></canvas>
+      <div id="ui"></div>
+      <div id="boot">
+        <div class="boot-inner">
+          <div class="plumbob"></div>
+          <h1>EVIL SIMS</h1>
+          <p class="tagline">Every household has an expiry date.<br/>Yours just needs a little <em>encouragement</em>.</p>
+          <div class="boot-bar"><i></i></div>
+          <div class="boot-status">Warming up the grill&hellip;</div>
+          <button id="boot-start" hidden>Begin the Household</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
