@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { SimAvatar, type SimLook, type Expression } from './SimMesh'
 import { NEED_KEYS, NEED_META, makeNeeds, clampNeeds, needScore, moodFor, type NeedKey, type Needs } from './Needs'
 import { bundleTraits, type TraitBundle } from './Traits'
+import { SOCIALS, type SocialDef, type SocialCtx } from './Socials'
 import type { AnimName, Interaction, InteractionCtx, SkillKey } from '../world/ObjectTypes'
 import type { WorldObject } from '../world/WorldObject'
 import type { IGame } from '../types'
@@ -28,6 +29,8 @@ export interface Task {
   onTick?: (sim: Sim, game: IGame, dtMin: number) => void
   tag?: string
   partner?: Sim
+  /** Set when this task is one sim doing something to another. */
+  social?: SocialDef
 }
 
 export interface Buff {
@@ -96,6 +99,8 @@ export class Sim {
   private voiceTimer = 0
   /** Seconds of remaining mouth movement from speech. */
   private talkTimer = 0
+  /** In-game minutes before this sim will start another social of its own accord. */
+  socialCooldown = 0
   /** Where the sim was last frame, for locking the walk cycle to real travel. */
   private lastAvatarPos = new THREE.Vector3()
 
@@ -161,6 +166,39 @@ export class Sim {
     }, true)
     if (this.task && this.task.priority < 8) this.clearTask(game)
     this.say(inter.label, 2)
+  }
+
+  /** A free tile next to `target` that this sim can actually reach. */
+  socialStandTile(game: IGame, target: Sim): TilePos | null {
+    const grid = game.grid
+    const me = this.tileOf(game)
+    const pt = target.tileOf(game)
+    const spot = grid.findNearest(pt.x, pt.z, (x, z) =>
+      grid.walkable(x, z) && !grid.isPool(x, z) && !(x === pt.x && z === pt.z), { allowStart: false })
+    if (!spot) return null
+    if (!grid.findPath(me.x, me.z, spot.x, spot.z, { avoidPool: true, allowSolidGoal: true })) return null
+    return spot
+  }
+
+  /** Player-directed: walk over and do something to another sim. */
+  commandSocial(game: IGame, target: Sim, social: SocialDef): boolean {
+    if (!this.alive || !target.alive || target === this) return false
+    const stand = this.socialStandTile(game, target)
+    if (!stand) {
+      this.say(`I cannot get to ${target.name}.`, 3)
+      game.notify(`<b>${this.name}</b> cannot reach <b>${target.name}</b>.`, 'warn', '🚧')
+      return false
+    }
+    this.queue = this.queue.filter((t) => t.forced)
+    this.enqueue({
+      label: `${social.label} — ${target.name}`,
+      obj: null, inter: null, stand, anim: social.anim,
+      duration: social.duration, forced: true, phase: 'route', elapsed: 0,
+      priority: 5, tag: 'social', partner: target, social,
+    }, true)
+    if (this.task && this.task.priority < 8) this.clearTask(game)
+    this.say(social.label, 2)
+    return true
   }
 
   simpleTask(label: string, anim: AnimName, duration: number, priority = 1, stand: TilePos | null = null): Task {
@@ -268,6 +306,7 @@ export class Sim {
     if (this.espressos > 0) {
       this.espressos = Math.max(0, this.espressos - dtMin / 240)
     }
+    this.socialCooldown = Math.max(0, this.socialCooldown - dtMin)
   }
 
   private tickStatus(game: IGame, dtMin: number) {
@@ -490,6 +529,23 @@ export class Sim {
       }
       if (task.inter.endWhen?.(ctx)) { this.finishTask(game, false); return }
     }
+    if (task.social && task.partner) {
+      const target = task.partner
+      if (!target.alive || target.held) { this.finishTask(game, true); return }
+      if (target.pos.distanceTo(this.pos) > 3.6) { this.finishTask(game, true); return }
+      this.faceToward(target.pos)
+      // pin the target into a reaction so the exchange reads as one beat
+      if (!target.task || target.task.priority <= 2) {
+        target.clearTask(game)
+        target.task = {
+          ...target.simpleTask(`${this.name}: ${task.social.label}`, task.social.targetAnim,
+            task.social.duration, 2),
+          tag: 'social', partner: this,
+          onTick: (o) => o.faceToward(this.pos),
+        }
+      }
+    }
+
     task.onTick?.(this, game, dtMin)
 
     if (task.duration >= 0 && task.elapsed >= task.duration) this.finishTask(game, false)
@@ -501,8 +557,56 @@ export class Sim {
     if (!aborted && task.obj && task.inter?.onFinish) {
       task.inter.onFinish({ sim: this, obj: task.obj, game, elapsed: task.elapsed })
     }
+    if (!aborted && task.social && task.partner?.alive) {
+      const ctx: SocialCtx = { actor: this, target: task.partner, game }
+      task.social.apply(ctx)
+      game.relationships.adjustMutual(this, task.partner, task.social.relation)
+      game.noteSocial(this, task.partner, task.social)
+      this.socialCooldown = 50
+      task.partner.socialCooldown = Math.max(task.partner.socialCooldown, 25)
+      clampNeeds(task.partner.needs)
+      clampNeeds(this.needs)
+    }
     if (!aborted) task.onFinish?.(this, game)
     this.clearTask(game)
+  }
+
+  /**
+   * Picks an unprompted social. Every mean social scores off how much this sim
+   * already dislikes the target, so a household at peace stays civil — the
+   * player has to sour something first, after which it sustains itself.
+   */
+  private findSpitefulSocial(game: IGame): { score: number; task: Task } | null {
+    if (this.socialCooldown > 0 || this.burning > 0 || this.panicTimer > 0) return null
+    let best: { score: number; social: SocialDef; target: Sim } | null = null
+
+    for (const target of game.sims) {
+      if (target === this || !target.alive || target.held || target.captured) continue
+      if (target.burning > 0) continue
+      const dist = target.pos.distanceTo(this.pos)
+      if (dist > 16) continue
+      for (const social of SOCIALS) {
+        if (!social.autonomy) continue
+        const ctx: SocialCtx = { actor: this, target, game }
+        if (social.requires && !social.requires(ctx)) continue
+        const score = social.autonomy(ctx) / (1 + dist * 0.09)
+        if (score <= 0) continue
+        if (!best || score > best.score) best = { score, social, target }
+      }
+    }
+    if (!best || best.score < 1.1) return null
+
+    const stand = this.socialStandTile(game, best.target)
+    if (!stand) return null
+    return {
+      score: best.score,
+      task: {
+        label: `${best.social.label} — ${best.target.name}`,
+        obj: null, inter: null, stand, anim: best.social.anim,
+        duration: best.social.duration, forced: false, phase: 'route', elapsed: 0,
+        priority: 2, tag: 'social', partner: best.target, social: best.social,
+      },
+    }
   }
 
   /** Walk over to another sim and talk at them for a while. */
@@ -615,6 +719,10 @@ export class Sim {
         if (best === null || score > best.score) best = { score, obj, inter, stand }
       }
     }
+
+    // sims who already dislike each other need no encouragement from the player
+    const spite = this.findSpitefulSocial(game)
+    if (spite && spite.score > (best?.score ?? 0)) return spite.task
 
     // talking to someone is often the best thing on offer
     const socialWant = 6.5 * Math.pow(1 - this.needs.social / 100, 2.2)

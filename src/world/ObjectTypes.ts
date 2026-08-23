@@ -14,6 +14,7 @@ export type AnimName =
   | 'idle' | 'walk' | 'swim' | 'sit' | 'sleep' | 'stand_use' | 'cook' | 'eat'
   | 'shower' | 'toilet' | 'read' | 'type' | 'watch' | 'dance' | 'run' | 'lift'
   | 'panic' | 'burn' | 'drown' | 'zap' | 'collapse' | 'cry' | 'laugh' | 'repair' | 'wave'
+  | 'taunt' | 'shove' | 'slap' | 'argue' | 'recoil' | 'cower'
 
 export interface ObjFlags {
   /** 0 = fireproof, 1 = practically kindling. */

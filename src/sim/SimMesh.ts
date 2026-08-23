@@ -656,6 +656,91 @@ export class SimAvatar {
           shinL: [0.2, 0, 0], shinR: [0.2, 0, 0],
         }
       }
+      case 'taunt': {
+        this.yOffsetTarget = 0
+        this.leanTarget = 0.12
+        const jab = Math.sin(t * 5)
+        return {
+          spine: [0.1, jab * 0.12, 0],
+          neck: [0.08, 0, 0],
+          // one arm out, finger pointed, the other on the hip
+          armR: [-2.3 - jab * 0.2, -0.35, -0.7],
+          foreR: [-0.15, 0, 0],
+          armL: [-0.9, 0.3, 0.75], foreL: [-1.7, 0, 0],
+          legL: [0, 0, 0.05], legR: [0, 0, -0.05],
+        }
+      }
+      case 'argue': {
+        this.yOffsetTarget = 0
+        this.leanTarget = 0.2 + Math.sin(t * 4) * 0.07
+        const g = Math.sin(t * 6)
+        return {
+          hips: [0, g * 0.12, 0],
+          spine: [0.14, -g * 0.16, 0],
+          neck: [0.06, 0, 0],
+          armL: [-1.5 + g * 0.55, 0.35, 0.5],
+          armR: [-1.5 - g * 0.55, -0.35, -0.5],
+          foreL: [-1.1, 0, 0], foreR: [-1.1, 0, 0],
+          legL: [0, 0, 0.07], legR: [0, 0, -0.07],
+        }
+      }
+      case 'shove': {
+        this.yOffsetTarget = -0.03
+        // wind up, then punch both hands forward
+        const push = Math.max(0, Math.sin(t * 7))
+        this.leanTarget = 0.1 + push * 0.28
+        return {
+          spine: [0.08 + push * 0.1, 0, 0],
+          armL: [-1.6 - push * 0.5, 0.2, 0.4],
+          armR: [-1.6 - push * 0.5, -0.2, -0.4],
+          foreL: [-1.2 + push * 1.1, 0, 0],
+          foreR: [-1.2 + push * 1.1, 0, 0],
+          legL: [-0.25, 0, 0.08], legR: [0.2, 0, -0.08],
+          shinL: [0.3, 0, 0], shinR: [0.1, 0, 0],
+        }
+      }
+      case 'slap': {
+        this.yOffsetTarget = 0
+        const swing = Math.sin(t * 8)
+        this.leanTarget = 0.08 + Math.max(0, swing) * 0.14
+        return {
+          hips: [0, -swing * 0.25, 0],
+          spine: [0.05, -swing * 0.35, 0],
+          neck: [0, swing * 0.2, 0],
+          armR: [-1.5 - swing * 0.9, -0.6 - swing * 0.5, -0.9],
+          foreR: [-0.5 + Math.max(0, swing) * 0.4, 0, 0],
+          armL: [-0.3, 0, 0.25], foreL: [-0.6, 0, 0],
+          legL: [0, 0, 0.06], legR: [0, 0, -0.06],
+        }
+      }
+      case 'recoil': {
+        // flinching backwards, arms up
+        this.yOffsetTarget = -0.08
+        this.leanTarget = -0.34 + Math.sin(t * 9) * 0.05
+        return {
+          hips: [0, 0, 0],
+          spine: [-0.2, 0, 0],
+          neck: [-0.35, 0, 0],
+          armL: [-2.5, 0.45, 0.85], armR: [-2.5, -0.45, -0.85],
+          foreL: [-1.5, 0, 0], foreR: [-1.5, 0, 0],
+          legL: [0.2, 0, 0.1], legR: [-0.15, 0, -0.1],
+          shinL: [0.1, 0, 0], shinR: [0.35, 0, 0],
+        }
+      }
+      case 'cower': {
+        // hunched, turned away, arms wrapped in
+        this.yOffsetTarget = -0.16
+        this.leanTarget = 0.34
+        return {
+          hips: [0, 0.25, 0],
+          spine: [0.3, 0.2, 0],
+          neck: [0.35, -0.3, 0],
+          armL: [-1.9, 0.5, 0.35], armR: [-2.0, -0.5, -0.35],
+          foreL: [-1.9, 0, 0], foreR: [-1.9, 0, 0],
+          legL: [-0.12, 0, 0.1], legR: [-0.1, 0, -0.1],
+          shinL: [0.25, 0, 0], shinR: [0.22, 0, 0],
+        }
+      }
       case 'wave': {
         this.yOffsetTarget = 0
         this.leanTarget = 0

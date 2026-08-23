@@ -12,6 +12,8 @@ import { WorldObject, footprintFits } from './world/WorldObject'
 import type { ObjectDef } from './world/ObjectTypes'
 import { BUILDERS } from './world/Meshes'
 import { Sim } from './sim/Sim'
+import { Relationships } from './sim/Relationships'
+import type { SocialDef } from './sim/Socials'
 import { SKIN_TONES, HAIR_COLORS, CLOTH_COLORS, type SimLook } from './sim/SimMesh'
 import { TRAITS } from './sim/Traits'
 import { Effects } from './systems/Effects'
@@ -63,6 +65,7 @@ export class Game implements IGame {
   readonly fx: Effects
   readonly fire: FireSystem
   readonly puddles: PuddleSystem
+  readonly relationships = new Relationships()
 
   sims: Sim[] = []
   objects: WorldObject[] = []
@@ -81,6 +84,13 @@ export class Game implements IGame {
   deathTypes = new Set<DeathId>()
   private fireDeathTally = 0
   private fireEpoch = 0
+
+  // --- social cruelty bookkeeping
+  meanSocialTotal = 0
+  private meanAgainst = new Map<number, number>()
+  private wakeCount = new Map<number, number>()
+  private fightCount = 0
+  private shovedIntoPoolAt = new Map<number, number>()
 
   /** Sim currently being dragged by the player. */
   dragging: Sim | null = null
@@ -322,6 +332,41 @@ export class Game implements IGame {
     for (const t of due) t.fn()
   }
 
+  /** Bookkeeping for social cruelty, and the deeds that hang off it. */
+  noteSocial(actor: Sim, target: Sim, social: SocialDef) {
+    if (social.tone === 'friendly') return
+    this.meanSocialTotal++
+    this.meanAgainst.set(target.id, (this.meanAgainst.get(target.id) ?? 0) + 1)
+    if (this.meanSocialTotal >= 15) this.recordDeed('bully')
+
+    if (social.id === 'wake') {
+      const n = (this.wakeCount.get(target.id) ?? 0) + 1
+      this.wakeCount.set(target.id, n)
+      if (n >= 5) this.recordDeed('sleepdeprived')
+    }
+    if (social.id === 'fight') {
+      this.fightCount++
+      if (this.fightCount >= 3) this.recordDeed('brawler')
+    }
+    if (social.id === 'shovePool') this.shovedIntoPoolAt.set(target.id, this.clock.minutes)
+
+    if (this.relationships.get(actor, target) <= -95 || this.relationships.get(target, actor) <= -95) {
+      this.recordDeed('nemesis')
+    }
+    // is anybody universally loathed?
+    for (const victim of this.sims) {
+      if (!victim.alive) continue
+      const others = this.sims.filter((s) => s !== victim && s.alive)
+      if (others.length >= 2 && others.every((o) => this.relationships.get(o, victim) < -25)) {
+        this.recordDeed('pariah')
+      }
+    }
+    this.onStateChange()
+  }
+
+  /** How many cruel things have been done to this sim. */
+  crueltyAgainst(sim: Sim) { return this.meanAgainst.get(sim.id) ?? 0 }
+
   recordDeed(id: string) {
     if (this.deeds.has(id)) return
     const def = DEED_BY_ID.get(id)
@@ -380,6 +425,12 @@ export class Game implements IGame {
     const canLeave = this.grid.canReach(t.x, t.z, (x, z) =>
       x <= 1 || z <= 1 || x >= LOT_W - 2 || z >= LOT_H - 2, { avoidPool: true })
     if (!canLeave) this.recordDeed('trapped')
+
+    if (death === 'drowning') {
+      const shoved = this.shovedIntoPoolAt.get(sim.id)
+      if (shoved !== undefined && this.clock.minutes - shoved < 180) this.recordDeed('pushed')
+    }
+    if (death === 'mortification' && this.crueltyAgainst(sim) >= 5) this.recordDeed('socialmurder')
 
     if (death === 'fire') {
       if (this.clock.minutes - this.fireEpoch > 600) { this.fireEpoch = this.clock.minutes; this.fireDeathTally = 0 }
@@ -646,6 +697,21 @@ export class Game implements IGame {
     dists.sort((a, b) => a[0] - b[0])
     const e = dists[0][1]
     return this.grid.inBounds(e.x, e.z) ? e : null
+  }
+
+  /**
+   * Pull the camera back to take in the whole household. The direct answer to
+   * "I have lost them and cannot find my way back".
+   */
+  frameHousehold() {
+    const alive = this.sims.filter((s) => s.alive)
+    const points = alive.length ? alive.map((s) => s.pos) : [new THREE.Vector3(0, 0, 0)]
+    const center = points
+      .reduce((acc, p) => acc.add(p), new THREE.Vector3())
+      .divideScalar(points.length)
+    let spread = 6
+    for (const p of points) spread = Math.max(spread, p.distanceTo(center))
+    this.rig.lookAt(center, THREE.MathUtils.clamp(spread * 2.4 + 12, 16, this.rig.maxDistance))
   }
 
   selectSim(sim: Sim | null) {

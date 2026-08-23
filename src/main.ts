@@ -3,6 +3,7 @@ import { Game } from './Game'
 import { UI } from './ui/UI'
 import { Controls } from './ui/Controls'
 import { audio } from './core/Audio'
+import { SOCIALS } from './sim/Socials'
 
 const canvas = document.getElementById('viewport') as HTMLCanvasElement
 const uiRoot = document.getElementById('ui') as HTMLElement
@@ -47,6 +48,7 @@ async function boot0() {
   ui.setMode('live')
   // debug handle: lets the browser console (and the smoke tests) drive the game
   ;(window as unknown as Record<string, unknown>).__game = game
+  ;(window as unknown as Record<string, unknown>).__socials = SOCIALS
   ui.refresh()
   await advance()
   await advance()

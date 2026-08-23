@@ -74,6 +74,15 @@ export const DEEDS: DeedDef[] = [
   { id: 'frugal', name: 'Frugal Evil', icon: '🪙', desc: 'Cause a death having sold more than you bought.', points: 140 },
   { id: 'plumbing', name: 'Plumbing Problems', icon: '🚽', desc: 'Sell every toilet while a sim is desperate.', points: 90 },
   { id: 'demolition', name: 'Demolition', icon: '🔨', desc: 'Sell 20 objects.', points: 60 },
+
+  // social cruelty
+  { id: 'bully', name: 'Bully', icon: '🗣', desc: 'Land 15 cruel social interactions.', points: 90 },
+  { id: 'nemesis', name: 'Nemesis', icon: '💔', desc: 'Drive a relationship all the way to Nemesis.', points: 130 },
+  { id: 'pariah', name: 'Pariah', icon: '🚫', desc: 'Make every other sim hostile toward one of them.', points: 180 },
+  { id: 'pushed', name: 'Pushed', icon: '🤾', desc: 'Drown a sim you shoved into the pool yourself.', points: 220 },
+  { id: 'socialmurder', name: 'Social Murder', icon: '😶‍🌫️', desc: 'Mortify a sim to death after tormenting them at least five times.', points: 240 },
+  { id: 'sleepdeprived', name: 'Sleep Deprivation', icon: '⏰', desc: 'Rudely wake the same sim five times.', points: 150 },
+  { id: 'brawler', name: 'Fight Club', icon: '👊', desc: 'Stage three fights.', points: 110 },
   { id: 'arsonist', name: 'Arsonist', icon: '🧯', desc: 'Have four fires burning at once.', points: 120 },
 ]
 

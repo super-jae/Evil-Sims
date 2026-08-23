@@ -45,6 +45,7 @@ Requires a WebGL2 browser. There is no server component and no network access.
 | **Shift+W** | Cycle wall display (cutaway / up / down) |
 | **Tab** | Cycle through living sims |
 | **F** | Center the camera on the selected sim |
+| **C** / **Home** | Center the camera back on the household |
 | **L** | Devious Deeds ledger |
 | **M** | Mute |
 | **Esc** | Close menus, cancel placement |
@@ -76,6 +77,31 @@ ordinary household objects. Some worked examples:
   fridge.
 - **Lock the rubbish bin** so nobody can empty it, and wait for the flies.
 
+## Turning them against each other
+
+Select one sim, then right-click another: everything the first can do to the second
+appears in the menu, from a compliment down to starting a brawl. Every sim holds a
+private opinion of every other, from **Devoted** down to **Nemesis**, shown in the
+panel of whoever is selected.
+
+The point is not the insult itself. Each cruelty feeds a system that can kill:
+
+| Do this | Because |
+|---|---|
+| **Insult**, **Blame Them for Everything** | Rage accumulates, and a sim who fills the meter dies of it |
+| **Mock Their Appearance**, **Laugh at Their Misfortune** | Embarrassment, which is how mortification kills. Mocking hits far harder on a sim who has not showered, and laughing is only available while they are already having a bad time |
+| **Tell a Cruel Joke** | The target is humiliated, but everyone *watching* finds it hilarious — and hysteria is its own cause of death |
+| **Wake Them Up Rudely** | Only while they sleep. Costs energy and adds two hours of sleep debt, which is the road to death by exhaustion |
+| **Steal Their Meal** | Only while they eat. A sim who never finishes a meal starves eventually |
+| **Shove Them Into the Pool** | Requires water within reach of them. With the ladder sold, that is a drowning |
+| **Start a Fight** | Both come away exhausted and filthy; the loser is enraged and humiliated |
+| **Spread Rumors** | Turns the entire rest of the household against them at once |
+
+Cruelty is contagious. Sims never start on each other unprompted while everyone is on
+neutral terms — but once you have soured a relationship, or spread a rumor, they carry
+on by themselves. In testing, souring a single pair produced nine more unprompted acts
+of cruelty and one sim who raged themselves to death without further help.
+
 The devious catalog also stocks a Murphy bed that occasionally folds people away, a
 chest freezer large enough to climb into, a steam sauna with a thermostat you can jam
 at maximum, a carnivorous Devouring Plant that lures hungry sims with cake, and a
@@ -95,10 +121,12 @@ ledger says so.
 
 ## Devious Deeds
 
-28 achievements, each worth points, tracked in the ledger (**L**). One per death type,
+35 achievements, each worth points, tracked in the ledger (**L**). One per death type,
 plus meta-deeds: cause five different kinds of death, lose three sims to a single fire,
 kill somebody who had no way out of the room, finish a household having earned more from
-selling than you spent buying. Your total maps to a rank, from *Suspiciously Nice Player*
+selling than you spent buying, drive a relationship all the way to Nemesis, make every
+sim hostile toward one of them, or mortify somebody to death after tormenting them at
+least five times. Your total maps to a rank, from *Suspiciously Nice Player*
 up to *Architect of Misfortune*.
 
 ## What is simulated
@@ -167,6 +195,7 @@ src/
   world/      Grid + A* · procedural Materials · Meshes · Catalog (objects & interactions)
               WorldObject · Lot (floor/wall/pool geometry, cutaway)
   sim/        Sim (needs, autonomy, task queue) · SimMesh (rig + animation) · Needs · Traits
+              Relationships (who loathes whom) · Socials (sim-to-sim interactions)
   systems/    Fire · Puddles · Effects (particles) · Decals · Deaths & Deeds
   ui/         UI (HUD, catalog, menus, ledger) · Controls (input → actions)
   Game.ts     Orchestration, build tools, death sequences, the Grim Reaper
@@ -176,6 +205,11 @@ Objects are data: an `ObjectDef` carries a footprint, flags (flammable, electric
 plumbing, bed, seat, ladder, breakable…), a procedural mesh builder, and a list of
 interactions with need deltas and lifecycle hooks. Adding a new object — or a new way to
 die — means adding one entry to the catalog.
+
+Sim-to-sim interactions follow the same shape: a `SocialDef` carries a duration, the
+animation each party plays, a relationship delta, an optional precondition, and an
+`apply` hook. Its `autonomy` function decides whether a sim would do it unprompted,
+which is what makes feuds sustain themselves.
 
 ## On the brief
 

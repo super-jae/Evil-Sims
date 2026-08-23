@@ -4,6 +4,8 @@ import type { Rand } from './core/Rand'
 import type { Sim } from './sim/Sim'
 import type { WorldObject } from './world/WorldObject'
 import type { DeathId } from './systems/Deaths'
+import type { Relationships } from './sim/Relationships'
+import type { SocialDef } from './sim/Socials'
 
 export type NoteKind = 'info' | 'warn' | 'danger' | 'death' | 'good'
 
@@ -13,6 +15,7 @@ export interface IGame {
   readonly clock: GameClock
   readonly rand: Rand
   readonly sims: Sim[]
+  readonly relationships: Relationships
   readonly objects: WorldObject[]
   funds: number
 
@@ -35,6 +38,8 @@ export interface IGame {
   /** Run `fn` after `minutes` of in-game time. Respects pause and game speed. */
   after(minutes: number, fn: () => void): void
   recordDeed(id: string): void
+  /** Called after one sim finishes doing something to another. */
+  noteSocial(actor: Sim, target: Sim, social: SocialDef): void
 
   objectsWithFlag(flag: string): WorldObject[]
   findObject(defId: string): WorldObject | undefined
