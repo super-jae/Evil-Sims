@@ -482,7 +482,7 @@ export const CATALOG: ObjectDef[] = [
     id: 'rug', name: 'Shag Rug', glyph: '🟥', category: 'decor', price: 220,
     size: [3, 2], height: 0.03, build: BUILDERS.rug,
     desc: 'Ties the room together. Also ties the fire together.',
-    lethal: 'The fastest-spreading surface in the catalogue.',
+    lethal: 'The fastest-spreading surface in the catalog.',
     flags: { flammable: 1.0 },
   },
   {
@@ -541,7 +541,7 @@ export const CATALOG: ObjectDef[] = [
         id: 'comedy', label: 'Watch Comedy Marathon', duration: 200, anim: 'watch',
         needs: { fun: 3.0, comfort: 0.3, energy: -0.4 }, hidden: true,
         requires: (c) => !c.obj.broken,
-        danger: 'Sims with a sense of humour can laugh themselves into a coffin.',
+        danger: 'Sims with a sense of humor can laugh themselves into a coffin.',
         onTick: (c, dt) => {
           c.sim.hysteria += dt * 0.5 * c.sim.traits.mirth
           if (c.game.rand.next() < dt * 0.08) { audio.play('laugh', c.sim.pos); c.sim.anim = 'laugh' }

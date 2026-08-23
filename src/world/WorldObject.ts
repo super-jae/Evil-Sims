@@ -101,7 +101,7 @@ export class WorldObject {
     return opts[0]
   }
 
-  /** Centre tile of the footprint (used for "stand on" interactions). */
+  /** Center tile of the footprint (used for "stand on" interactions). */
   centerTile(): TilePos {
     const [w, d] = this.size
     return { x: this.tx + Math.floor(w / 2), z: this.tz + Math.floor(d / 2) }

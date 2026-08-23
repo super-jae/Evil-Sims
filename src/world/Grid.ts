@@ -38,7 +38,7 @@ export class Grid {
   idx(x: number, z: number) { return z * LOT_W + x }
   inBounds(x: number, z: number) { return x >= 0 && z >= 0 && x < LOT_W && z < LOT_H }
 
-  /** World-space centre of a tile. */
+  /** World-space center of a tile. */
   tileToWorld(x: number, z: number): [number, number] {
     return [(x - LOT_W / 2 + 0.5) * TILE, (z - LOT_H / 2 + 0.5) * TILE]
   }
@@ -150,7 +150,7 @@ export class Grid {
     if (this.poolEdgeBlocked(ax, az, bx, bz)) return false
     const dx = bx - ax, dz = bz - az
     if (dx !== 0 && dz !== 0) {
-      // diagonals need both orthogonal neighbours clear (no squeezing past corners)
+      // diagonals need both orthogonal neighbors clear (no squeezing past corners)
       if (!this.walkable(ax + dx, az) || !this.walkable(ax, az + dz)) return false
       if (this.wallBetween(ax, az, ax + dx, az) || this.wallBetween(ax + dx, az, bx, bz)) return false
       if (this.wallBetween(ax, az, ax, az + dz) || this.wallBetween(ax, az + dz, bx, bz)) return false

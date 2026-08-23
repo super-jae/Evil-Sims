@@ -44,7 +44,7 @@ Requires a WebGL2 browser. There is no server component and no network access.
 | **R** | Rotate the object you are placing |
 | **Shift+W** | Cycle wall display (cutaway / up / down) |
 | **Tab** | Cycle through living sims |
-| **F** | Centre the camera on the selected sim |
+| **F** | Center the camera on the selected sim |
 | **L** | Devious Deeds ledger |
 | **M** | Mute |
 | **Esc** | Close menus, cancel placement |
@@ -76,12 +76,12 @@ ordinary household objects. Some worked examples:
   fridge.
 - **Lock the rubbish bin** so nobody can empty it, and wait for the flies.
 
-The devious catalogue also stocks a Murphy bed that occasionally folds people away, a
+The devious catalog also stocks a Murphy bed that occasionally folds people away, a
 chest freezer large enough to climb into, a steam sauna with a thermostat you can jam
 at maximum, a carnivorous Devouring Plant that lures hungry sims with cake, and a
 home-built orbital rocket.
 
-Objects that can go wrong are marked with **☠** in the catalogue and explain exactly
+Objects that can go wrong are marked with **☠** in the catalog and explain exactly
 how in their tooltip. Nothing is hidden from you.
 
 ## The eighteen ways to go
@@ -163,7 +163,7 @@ src/
 Objects are data: an `ObjectDef` carries a footprint, flags (flammable, electrical,
 plumbing, bed, seat, ladder, breakable…), a procedural mesh builder, and a list of
 interactions with need deltas and lifecycle hooks. Adding a new object — or a new way to
-die — means adding one entry to the catalogue.
+die — means adding one entry to the catalog.
 
 ## On the brief
 

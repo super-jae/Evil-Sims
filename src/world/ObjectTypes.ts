@@ -81,7 +81,7 @@ export interface ObjectDef {
   price: number
   /** Footprint in tiles at rotation 0: [width(x), depth(z)]. */
   size: [number, number]
-  /** Approximate visual height in metres, used for the cutaway and tooltips. */
+  /** Approximate visual height in meters, used for the cutaway and tooltips. */
   height: number
   desc: string
   /** Short blurb describing how this thing can go wrong. */

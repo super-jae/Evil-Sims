@@ -339,7 +339,7 @@ export class AudioEngine {
     this.tone({ freq: NOTE(-36), type: 'sine', dur: 3.2, gain: 0.3, at })
   }
 
-  /** Nonsense speech with a per-sim voice colour — the game's "Simlish". */
+  /** Nonsense speech with a per-sim voice color — the game's "Simlish". */
   speak(seed: number, syllables = 3, emotion: 'neutral' | 'happy' | 'sad' | 'angry' | 'scared' = 'neutral', at?: Vec) {
     if (!this.started || !this.enabled) return
     const ctx = this.ctx!

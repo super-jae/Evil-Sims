@@ -8,7 +8,7 @@ import { audio } from '../core/Audio'
 export interface FireCell {
   x: number
   z: number
-  /** 0.3 = smouldering, 2.5 = fully involved. */
+  /** 0.3 = smoldering, 2.5 = fully involved. */
   intensity: number
   fuel: number
   age: number

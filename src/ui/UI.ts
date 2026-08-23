@@ -100,7 +100,7 @@ export class UI {
     this.deathsEl = deaths.querySelector('#deaths-v')!
     this.pointsEl = pts.querySelector('#pts-v')!
 
-    const centre = el('div', 'hud-group')
+    const center = el('div', 'hud-group')
     const clock = el('div', 'hud-chip panel', '<span class="lbl" id="clock-d">Day 1</span><span class="val" id="clock-v">8:00 AM</span>')
     clock.id = 'clock'
     const speeds = el('div', 'btn-row panel')
@@ -112,7 +112,7 @@ export class UI {
       this.speedBtns.push(b)
       speeds.appendChild(b)
     })
-    centre.append(clock, speeds)
+    center.append(clock, speeds)
     this.clockEl = clock.querySelector('#clock-v')!
 
     const right = el('div', 'hud-group')
@@ -141,7 +141,7 @@ export class UI {
     extras.append(this.wallBtn, ledgerBtn, muteBtn)
     right.append(extras, modes)
 
-    bar.append(left, centre, right)
+    bar.append(left, center, right)
     this.root.appendChild(bar)
   }
 

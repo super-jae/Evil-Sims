@@ -42,7 +42,7 @@ export class Lot {
     const far = 120
 
     // A ring of ground with the lot punched out, so excavated pools are not
-    // occluded by the neighbourhood terrain underneath them.
+    // occluded by the neighborhood terrain underneath them.
     const shape = new THREE.Shape()
     shape.moveTo(-far, -far)
     shape.lineTo(far, -far)
@@ -70,13 +70,13 @@ export class Lot {
     this.group.add(m)
     const half = halfX
 
-    // low kerb around the lot so the plot reads as a plot
-    const kerbMat = new THREE.MeshStandardMaterial({ color: 0xb0aca2, roughness: 0.92 })
+    // low curb around the lot so the plot reads as a plot
+    const curbMat = new THREE.MeshStandardMaterial({ color: 0xb0aca2, roughness: 0.92 })
     for (const [sx, sz, w, d] of [
       [0, -half - 0.2, LOT_W + 0.8, 0.4], [0, half + 0.2, LOT_W + 0.8, 0.4],
       [-half - 0.2, 0, 0.4, LOT_H + 0.8], [half + 0.2, 0, 0.4, LOT_H + 0.8],
     ]) {
-      const k = new THREE.Mesh(new THREE.BoxGeometry(w, 0.14, d), kerbMat)
+      const k = new THREE.Mesh(new THREE.BoxGeometry(w, 0.14, d), curbMat)
       k.position.set(sx, 0.02, sz)
       k.receiveShadow = true
       this.group.add(k)
@@ -260,13 +260,13 @@ export class Lot {
       const y = -POOL_DEPTH
       addQuad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0], [0, 1, 0])
       // side walls where the pool meets solid ground
-      const neighbours: [number, number, number[][], number[]][] = [
+      const neighbors: [number, number, number[][], number[]][] = [
         [0, -1, [[x0, 0, z0], [x1, 0, z0], [x1, y, z0], [x0, y, z0]], [0, 0, 1]],
         [0, 1, [[x1, 0, z1], [x0, 0, z1], [x0, y, z1], [x1, y, z1]], [0, 0, -1]],
         [-1, 0, [[x0, 0, z1], [x0, 0, z0], [x0, y, z0], [x0, y, z1]], [1, 0, 0]],
         [1, 0, [[x1, 0, z0], [x1, 0, z1], [x1, y, z1], [x1, y, z0]], [-1, 0, 0]],
       ]
-      for (const [dx, dz, quad, n] of neighbours) {
+      for (const [dx, dz, quad, n] of neighbors) {
         if (grid.isPool(t.x + dx, t.z + dz)) continue
         addQuad(quad[0], quad[1], quad[2], quad[3], n)
       }
