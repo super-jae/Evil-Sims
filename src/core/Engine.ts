@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
 
 /** Colour keyframes for the day/night cycle, keyed by hour. */
 interface SkyKey {
@@ -123,6 +124,10 @@ export class Engine {
   private skyMat!: THREE.ShaderMaterial
   private grade!: ShaderPass
   private bloom!: UnrealBloomPass
+  private gtao!: GTAOPass
+  /** Unit vector pointing from the lot toward the sun. */
+  private sunDir = new THREE.Vector3(0.4, 0.8, 0.3)
+  private shadowHalf = 24
   private fillLight: THREE.DirectionalLight
   private moon: THREE.DirectionalLight
   private canvas: HTMLCanvasElement
@@ -170,17 +175,13 @@ export class Engine {
     // --- lights ---
     this.sun = new THREE.DirectionalLight(0xfff4e0, 1.5)
     this.sun.castShadow = true
-    this.sun.shadow.mapSize.set(2048, 2048)
+    this.sun.shadow.mapSize.set(3072, 3072)
     this.sun.shadow.camera.near = 1
-    this.sun.shadow.camera.far = 160
-    const s = 34
-    this.sun.shadow.camera.left = -s
-    this.sun.shadow.camera.right = s
-    this.sun.shadow.camera.top = s
-    this.sun.shadow.camera.bottom = -s
-    this.sun.shadow.bias = -0.0006
-    this.sun.shadow.normalBias = 0.028
-    this.sun.shadow.radius = 2.2
+    this.sun.shadow.camera.far = 200
+    this.sun.shadow.bias = -0.00035
+    this.sun.shadow.normalBias = 0.022
+    this.sun.shadow.radius = 1.6
+    this.setShadowFocus(0, 0, 26)
     this.scene.add(this.sun, this.sun.target)
 
     this.ambient = new THREE.HemisphereLight(0xb2c8e4, 0x5d564a, 1.0)
@@ -203,6 +204,18 @@ export class Engine {
     })
     this.composer = new EffectComposer(this.renderer, rt)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
+
+    // Ground-contact ambient occlusion. Without this everything reads as
+    // floating; it is the single largest perceived-quality win available.
+    this.gtao = new GTAOPass(this.scene, this.camera, size.x, size.y)
+    this.gtao.blendIntensity = 0.85
+    this.gtao.updateGtaoMaterial({
+      radius: 0.42, distanceExponent: 1.6, thickness: 0.55,
+      distanceFallOff: 1.0, scale: 1.1, samples: 16,
+    })
+    this.gtao.updatePdMaterial({ lumaPhi: 8, depthPhi: 2, normalPhi: 4, radius: 3, rings: 2, samples: 12 })
+    this.composer.addPass(this.gtao)
+
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.42, 0.62, 0.86)
     this.composer.addPass(this.bloom)
     this.grade = new ShaderPass(GradeShader)
@@ -222,6 +235,7 @@ export class Engine {
     this.renderer.setSize(w, h, false)
     this.composer.setSize(w, h)
     this.bloom.resolution.set(w, h)
+    this.gtao?.setSize(w, h)
   }
 
   /** Reduce resolution when the frame budget is blown (called by the game loop). */
@@ -229,8 +243,33 @@ export class Engine {
     const target = Math.max(0.7, Math.min(2, window.devicePixelRatio * scale))
     if (Math.abs(target - this.pixelRatioCap) < 0.05) return
     this.pixelRatioCap = target
+    // ambient occlusion is the first thing to go when the frame budget is tight
+    this.gtao.enabled = scale > 0.82
     this.resize()
   }
+
+  /**
+   * Aims the shadow frustum at what the camera is looking at and shrinks it as
+   * you zoom in, so a fixed shadow map buys far more texels per metre. The
+   * focus is snapped to the texel grid to stop shadow edges crawling as the
+   * camera moves.
+   */
+  setShadowFocus(x: number, z: number, cameraDistance: number) {
+    const half = THREE.MathUtils.clamp(cameraDistance * 0.62, 11, 30)
+    this.shadowHalf = half
+    const cam = this.sun.shadow.camera
+    cam.left = -half; cam.right = half; cam.top = half; cam.bottom = -half
+    cam.updateProjectionMatrix()
+
+    const texel = (half * 2) / this.sun.shadow.mapSize.x
+    const sx = Math.round(x / texel) * texel
+    const sz = Math.round(z / texel) * texel
+    this.sun.target.position.set(sx, 0, sz)
+    this.sun.target.updateMatrixWorld()
+    this.sun.position.copy(this.sunDir).multiplyScalar(70).add(this.sun.target.position)
+  }
+
+  setAOEnabled(on: boolean) { this.gtao.enabled = on }
 
   /** Blend the sky, sun and ambient lighting to match the in-game hour. */
   setTimeOfDay(hour: number) {
@@ -249,10 +288,9 @@ export class Engine {
     // sun arcs east -> west, peaking at noon
     const ang = ((h - 6) / 12) * Math.PI
     const elev = Math.sin(ang)
-    const dir = new THREE.Vector3(Math.cos(ang) * 34, Math.max(elev, -0.4) * 42, 14 + Math.cos(ang) * 6)
-    this.sun.position.copy(dir)
-    this.sun.target.position.set(0, 0, 0)
-    ;(u.uSunDir.value as THREE.Vector3).copy(dir).normalize()
+    this.sunDir.set(Math.cos(ang) * 34, Math.max(elev, -0.4) * 42, 14 + Math.cos(ang) * 6).normalize()
+    this.sun.position.copy(this.sunDir).multiplyScalar(70).add(this.sun.target.position)
+    ;(u.uSunDir.value as THREE.Vector3).copy(this.sunDir)
 
     this.sun.color.copy(a.sun).lerp(b.sun, t)
     this.sun.intensity = THREE.MathUtils.lerp(a.sunIntensity, b.sunIntensity, t)

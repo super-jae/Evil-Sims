@@ -35,19 +35,84 @@ function finish(c: HTMLCanvasElement, repeat: number, aniso = 8): THREE.Texture 
   return t
 }
 
-/** A grey-scale copy of a canvas, usable as a roughness or bump map. */
-function toData(c: HTMLCanvasElement, repeat: number): THREE.Texture {
-  const t = new THREE.CanvasTexture(c)
-  t.wrapS = t.wrapT = THREE.RepeatWrapping
-  t.repeat.set(repeat, repeat)
-  t.anisotropy = 4
-  t.needsUpdate = true
-  return t
+/**
+ * Derives a tangent-space normal map from a colour canvas by treating its
+ * luminance as a height field and running a Sobel filter over it. Costs one
+ * pass at boot and gives every procedural surface real relief under lighting,
+ * which is most of what separates "flat coloured shape" from "material".
+ */
+function normalFromCanvas(c: HTMLCanvasElement, strength: number, repeat: number): THREE.Texture {
+  const g = c.getContext('2d')!
+  const w = c.width, h = c.height
+  const src = g.getImageData(0, 0, w, h).data
+  const out = new Uint8Array(w * h * 4)
+  const lum = (x: number, y: number) => {
+    const xi = ((x % w) + w) % w
+    const yi = ((y % h) + h) % h
+    const i = (yi * w + xi) * 4
+    return (src[i] * 0.299 + src[i + 1] * 0.587 + src[i + 2] * 0.114) / 255
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // Sobel over the height field
+      const tl = lum(x - 1, y - 1), t = lum(x, y - 1), tr = lum(x + 1, y - 1)
+      const l = lum(x - 1, y), r = lum(x + 1, y)
+      const bl = lum(x - 1, y + 1), b = lum(x, y + 1), br = lum(x + 1, y + 1)
+      const dx = (tl + 2 * l + bl) - (tr + 2 * r + br)
+      const dy = (tl + 2 * t + tr) - (bl + 2 * b + br)
+      let nx = dx * strength, ny = dy * strength
+      const nz = 1
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
+      nx /= len; ny /= len
+      const i = (y * w + x) * 4
+      out[i] = (nx * 0.5 + 0.5) * 255
+      out[i + 1] = (ny * 0.5 + 0.5) * 255
+      out[i + 2] = (nz / len * 0.5 + 0.5) * 255
+      out[i + 3] = 255
+    }
+  }
+  const tex = new THREE.DataTexture(out, w, h, THREE.RGBAFormat)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(repeat, repeat)
+  tex.anisotropy = 4
+  tex.generateMipmaps = true
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.magFilter = THREE.LinearFilter
+  tex.needsUpdate = true
+  return tex
+}
+
+/**
+ * Roughness variation from the same luminance: darker parts of a texture read
+ * as recessed grout, grain or pile, and those should scatter more light.
+ */
+function roughnessFromCanvas(c: HTMLCanvasElement, lo: number, hi: number, repeat: number): THREE.Texture {
+  const g = c.getContext('2d')!
+  const w = c.width, h = c.height
+  const src = g.getImageData(0, 0, w, h).data
+  const out = new Uint8Array(w * h * 4)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const v = (src[j] * 0.299 + src[j + 1] * 0.587 + src[j + 2] * 0.114) / 255
+    const rough = (hi + (lo - hi) * v) * 255
+    out[j] = 0
+    out[j + 1] = rough      // three samples roughness from the green channel
+    out[j + 2] = 0
+    out[j + 3] = 255
+  }
+  const tex = new THREE.DataTexture(out, w, h, THREE.RGBAFormat)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(repeat, repeat)
+  tex.anisotropy = 4
+  tex.generateMipmaps = true
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.needsUpdate = true
+  return tex
 }
 
 // ---------------------------------------------------------------- generators
 
-function grassTexture(): { map: THREE.Texture; rough: THREE.Texture } {
+function grassTexture(): HTMLCanvasElement {
   const S = 256
   const { c, g } = makeCanvas(S)
   const img = g.createImageData(S, S)
@@ -70,18 +135,10 @@ function grassTexture(): { map: THREE.Texture; rough: THREE.Texture } {
     g.fillStyle = `rgba(${90 + Math.random() * 60},${120 + Math.random() * 60},${50},${0.12 + Math.random() * 0.18})`
     g.beginPath(); g.arc(x, y, r, 0, 7); g.fill()
   }
-  const { c: rc, g: rg } = makeCanvas(128)
-  const rimg = rg.createImageData(128, 128)
-  for (let i = 0; i < 128 * 128; i++) {
-    const v = 190 + Math.random() * 55
-    rimg.data[i * 4] = rimg.data[i * 4 + 1] = rimg.data[i * 4 + 2] = v
-    rimg.data[i * 4 + 3] = 255
-  }
-  rg.putImageData(rimg, 0, 0)
-  return { map: finish(c, 0.34, 16), rough: toData(rc, 0.34) }
+  return c
 }
 
-function woodTexture(): THREE.Texture {
+function woodTexture(): HTMLCanvasElement {
   const S = 256
   const { c, g } = makeCanvas(S)
   g.fillStyle = '#8a5a34'; g.fillRect(0, 0, S, S)
@@ -102,10 +159,10 @@ function woodTexture(): THREE.Texture {
     g.fillStyle = 'rgba(30,16,6,.5)'
     g.fillRect(0, p * ph, S, 1.4)
   }
-  return finish(c, 1, 16)
+  return c
 }
 
-function tileTexture(): THREE.Texture {
+function tileTexture(): HTMLCanvasElement {
   const S = 256
   const { c, g } = makeCanvas(S)
   const n = 4, ts = S / n
@@ -126,10 +183,10 @@ function tileTexture(): THREE.Texture {
     g.fillRect(i * ts - 1.5, 0, 1.5, S)
     g.fillRect(0, i * ts - 1.5, S, 1.5)
   }
-  return finish(c, 1, 16)
+  return c
 }
 
-function carpetTexture(): THREE.Texture {
+function carpetTexture(): HTMLCanvasElement {
   const S = 256
   const { c, g } = makeCanvas(S)
   const img = g.createImageData(S, S)
@@ -144,10 +201,10 @@ function carpetTexture(): THREE.Texture {
     }
   }
   g.putImageData(img, 0, 0)
-  return finish(c, 2, 8)
+  return c
 }
 
-function concreteTexture(): THREE.Texture {
+function concreteTexture(): HTMLCanvasElement {
   const S = 256
   const { c, g } = makeCanvas(S)
   const img = g.createImageData(S, S)
@@ -162,10 +219,10 @@ function concreteTexture(): THREE.Texture {
     }
   }
   g.putImageData(img, 0, 0)
-  return finish(c, 1, 8)
+  return c
 }
 
-function marbleTexture(): THREE.Texture {
+function marbleTexture(): HTMLCanvasElement {
   const S = 256
   const { c, g } = makeCanvas(S)
   const img = g.createImageData(S, S)
@@ -180,10 +237,10 @@ function marbleTexture(): THREE.Texture {
     }
   }
   g.putImageData(img, 0, 0)
-  return finish(c, 1, 16)
+  return c
 }
 
-function plasterTexture(tint: [number, number, number]): THREE.Texture {
+function plasterTexture(tint: [number, number, number]): HTMLCanvasElement {
   const S = 128
   const { c, g } = makeCanvas(S)
   const img = g.createImageData(S, S)
@@ -196,7 +253,39 @@ function plasterTexture(tint: [number, number, number]): THREE.Texture {
     }
   }
   g.putImageData(img, 0, 0)
-  return finish(c, 1, 8)
+  return c
+}
+
+/**
+ * Builds a full PBR material from one procedural canvas: colour, derived
+ * normal relief and derived roughness variation, all from the same source.
+ */
+function surface(c: HTMLCanvasElement, o: {
+  repeat: number
+  roughness: number
+  metalness?: number
+  normalStrength?: number
+  normalScale?: number
+  roughLo?: number
+  roughHi?: number
+  color?: number
+  anisotropy?: number
+}): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({
+    map: finish(c, o.repeat, o.anisotropy ?? 16),
+    roughness: o.roughness,
+    metalness: o.metalness ?? 0,
+  })
+  if (o.color !== undefined) mat.color.setHex(o.color)
+  if (o.normalStrength) {
+    mat.normalMap = normalFromCanvas(c, o.normalStrength, o.repeat)
+    const n = o.normalScale ?? 1
+    mat.normalScale = new THREE.Vector2(n, n)
+  }
+  if (o.roughLo !== undefined && o.roughHi !== undefined) {
+    mat.roughnessMap = roughnessFromCanvas(c, o.roughLo, o.roughHi, o.repeat)
+  }
+  return mat
 }
 
 // ---------------------------------------------------------------- water shader
@@ -272,25 +361,44 @@ export class MaterialLibrary {
   readonly palette: Record<string, THREE.MeshStandardMaterial> = {}
 
   build() {
-    const g = grassTexture()
-    this.grass = new THREE.MeshStandardMaterial({
-      map: g.map, roughnessMap: g.rough, roughness: 0.95, metalness: 0,
+    this.grass = surface(grassTexture(), {
+      repeat: 0.34, roughness: 0.95, normalStrength: 2.6, normalScale: 0.85,
+      roughLo: 0.82, roughHi: 1.0,
     })
 
-    const mk = (map: THREE.Texture, rough: number, metal = 0) =>
-      new THREE.MeshStandardMaterial({ map, roughness: rough, metalness: metal })
-
     this.floors[0] = this.grass
-    this.floors[1] = mk(woodTexture(), 0.62)
-    this.floors[2] = mk(tileTexture(), 0.32)
-    this.floors[3] = mk(carpetTexture(), 0.98)
-    this.floors[4] = mk(concreteTexture(), 0.85)
-    this.floors[5] = mk(marbleTexture(), 0.18, 0.06)
+    this.floors[1] = surface(woodTexture(), {
+      repeat: 1, roughness: 0.62, normalStrength: 3.4, normalScale: 0.7,
+      roughLo: 0.42, roughHi: 0.78,
+    })
+    this.floors[2] = surface(tileTexture(), {
+      repeat: 1, roughness: 0.32, normalStrength: 5.0, normalScale: 1.0,
+      roughLo: 0.16, roughHi: 0.72,
+    })
+    this.floors[3] = surface(carpetTexture(), {
+      repeat: 2, roughness: 0.98, normalStrength: 2.2, normalScale: 0.6,
+      roughLo: 0.9, roughHi: 1.0, anisotropy: 8,
+    })
+    this.floors[4] = surface(concreteTexture(), {
+      repeat: 1, roughness: 0.85, normalStrength: 2.4, normalScale: 0.8,
+      roughLo: 0.7, roughHi: 0.95, anisotropy: 8,
+    })
+    this.floors[5] = surface(marbleTexture(), {
+      repeat: 1, roughness: 0.18, metalness: 0.06, normalStrength: 1.2, normalScale: 0.35,
+      roughLo: 0.1, roughHi: 0.34,
+    })
 
-    this.wallInner = new THREE.MeshStandardMaterial({ map: plasterTexture([228, 224, 214]), roughness: 0.9 })
-    this.wallOuter = new THREE.MeshStandardMaterial({ map: plasterTexture([196, 186, 170]), roughness: 0.94 })
+    this.wallInner = surface(plasterTexture([228, 224, 214]), {
+      repeat: 1, roughness: 0.9, normalStrength: 2.0, normalScale: 0.5, anisotropy: 8,
+    })
+    this.wallOuter = surface(plasterTexture([196, 186, 170]), {
+      repeat: 1, roughness: 0.94, normalStrength: 2.4, normalScale: 0.6, anisotropy: 8,
+    })
     this.wallTop = new THREE.MeshStandardMaterial({ color: 0xe6e2d8, roughness: 0.85 })
-    this.poolWall = new THREE.MeshStandardMaterial({ map: tileTexture(), roughness: 0.28, color: 0x6aa8c4 })
+    this.poolWall = surface(tileTexture(), {
+      repeat: 1, roughness: 0.28, normalStrength: 5.0, normalScale: 0.9, color: 0x6aa8c4,
+      roughLo: 0.14, roughHi: 0.6,
+    })
 
     this.water = new THREE.ShaderMaterial({
       uniforms: {

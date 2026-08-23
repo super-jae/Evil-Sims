@@ -723,6 +723,7 @@ export class Game implements IGame {
     this.input.update(dt)
     this.rig.update(dt)
     this.engine.setTimeOfDay(this.clock.hour)
+    this.engine.setShadowFocus(this.rig.focus.x, this.rig.focus.z, this.rig.distance)
 
     if (this.dragging) this.updateDrag()
 
