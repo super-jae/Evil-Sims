@@ -7,6 +7,7 @@ import { DEATHS, DEEDS, rankFor } from '../systems/Deaths'
 import type { Sim } from '../sim/Sim'
 import type { WorldObject } from '../world/WorldObject'
 import type { Interaction } from '../world/ObjectTypes'
+import { SOCIALS } from '../sim/Socials'
 import type { NoteKind } from '../types'
 import type { Category } from '../world/ObjectTypes'
 import type { BuildTool } from '../Game'
@@ -131,6 +132,9 @@ export class UI {
     const ledgerBtn = el('button', 'icon-btn', '📓') as HTMLButtonElement
     ledgerBtn.title = 'Devious Deeds ledger (L)'
     ledgerBtn.onclick = () => this.toggleLedger()
+    const centerBtn = el('button', 'icon-btn', '🎯') as HTMLButtonElement
+    centerBtn.title = 'Center on the household (C / Home)'
+    centerBtn.onclick = () => { this.game.frameHousehold(); audio.play('click') }
     const muteBtn = el('button', 'icon-btn', '🔊') as HTMLButtonElement
     muteBtn.title = 'Mute (M)'
     muteBtn.onclick = () => {
@@ -138,7 +142,7 @@ export class UI {
       muteBtn.textContent = audio.enabled ? '🔊' : '🔇'
       if (!audio.enabled) audio.stopAllLoops()
     }
-    extras.append(this.wallBtn, ledgerBtn, muteBtn)
+    extras.append(centerBtn, this.wallBtn, ledgerBtn, muteBtn)
     right.append(extras, modes)
 
     bar.append(left, center, right)
@@ -235,7 +239,10 @@ export class UI {
     this.closeMenu()
     audio.play('click')
     document.getElementById('viewport')?.classList.toggle('build', mode === 'build')
+    // the catalog sits where the needs panel does, so shift the panel aside
+    document.body.classList.toggle('build-mode', mode === 'build')
     this.catalogEl.classList.toggle('open', mode === 'build')
+    this.hideTooltip()
     for (const b of this.modeBtns) b.classList.toggle('active', b.dataset.mode === mode)
     this.setHint(mode === 'build'
       ? 'Pick a tool, then click the lot. Selling is how most of your plans begin.'
@@ -332,35 +339,67 @@ export class UI {
 
   openSimMenu(sim: Sim, x: number, y: number) {
     const game = this.game
+    const actor = game.selected
     this.ctxEl.innerHTML = ''
     this.ctxEl.appendChild(el('div', 'ctx-title', `${sim.fullName} · ${sim.mood.label}`))
-    const add = (label: string, hint: string, cls: string, fn: () => void, disabled = false) => {
+
+    const add = (label: string, hint: string, cls: string, fn: () => void, disabled = false, title = '') => {
       const b = el('button', `ctx-item ${cls}`) as HTMLButtonElement
       b.innerHTML = `<span>${label}</span><span class="hint">${hint}</span>`
       b.disabled = disabled
+      if (title) b.title = title
       b.onclick = () => { fn(); this.closeMenu() }
+      b.onmouseenter = () => { if (!disabled) audio.play('hover') }
       this.ctxEl.appendChild(b)
+      return b
     }
+
+    // --- sim-to-sim, when somebody else is selected
+    if (actor && actor.alive && actor !== sim && sim.alive) {
+      const score = game.relationships.get(actor, sim)
+      const rel = game.relationships.label(score)
+      const header = el('div', 'ctx-title',
+        `${actor.name} → ${sim.name} · <span style="color:${rel.color}">${rel.text} ${score > 0 ? '+' : ''}${Math.round(score)}</span>`)
+      this.ctxEl.appendChild(header)
+
+      const group = el('div', 'ctx-scroll')
+      for (const social of SOCIALS) {
+        const ctx = { actor, target: sim, game }
+        const ok = !social.requires || social.requires(ctx)
+        const cls = social.tone === 'cruel' ? 'evil' : social.tone === 'mean' ? 'danger' : ''
+        const b = el('button', `ctx-item ${cls}`) as HTMLButtonElement
+        b.innerHTML = `<span>${social.label}</span><span class="hint">${social.danger ? '☠' : `${social.relation > 0 ? '+' : ''}${social.relation}`}</span>`
+        b.disabled = !ok
+        b.title = ok ? (social.danger ?? social.hint ?? '') : 'Not possible right now'
+        b.onclick = () => {
+          actor.commandSocial(game, sim, social)
+          audio.play('confirm')
+          this.closeMenu()
+        }
+        b.onmouseenter = () => {
+          if (b.disabled) return
+          audio.play('hover')
+          const r = b.getBoundingClientRect()
+          this.showTooltip(r.left - 12, r.top,
+            `<b>${social.label}</b><br/>${social.hint ?? ''}` +
+            (social.danger ? `<br/><span class="danger">☠ ${social.danger}</span>` : ''))
+        }
+        b.onmouseleave = () => this.hideTooltip()
+        group.appendChild(b)
+      }
+      this.ctxEl.appendChild(group)
+      this.ctxEl.appendChild(el('div', 'ctx-sep'))
+    } else if (sim.alive && (!actor || actor === sim)) {
+      const note = el('div', 'ctx-title',
+        '<span style="color:#98a0b4">Select another sim first to be cruel to this one.</span>')
+      note.style.borderBottom = 'none'
+      this.ctxEl.appendChild(note)
+    }
+
     add('Select', '👁', '', () => game.selectSim(sim), !sim.alive)
     add('Follow with camera', '🎥', '', () => game.rig.lookAt(sim.pos, 13))
     add('Cancel all actions', '✖', '', () => { sim.clearTask(game); sim.queue = [] }, !sim.alive)
     add('Pick up and carry', '✋', 'evil', () => game.beginDrag(sim), !sim.alive)
-    if (sim.alive) {
-      add('Tell a hilarious joke', '🤣', 'evil', () => {
-        sim.hysteria += 22 * sim.traits.mirth
-        sim.needs.fun = Math.min(100, sim.needs.fun + 14)
-        sim.anim = 'laugh'
-        audio.play('laugh', sim.pos)
-        game.floatText(sim.pos.x, 1.9, sim.pos.z, 'HA HA HA', '#ffd166')
-      })
-      add('Point out their failings', '😢', 'evil', () => {
-        sim.embarrassment += 18 * sim.traits.shame
-        sim.rage += 12 * sim.traits.temper
-        sim.needs.fun -= 16
-        sim.anim = 'cry'
-        game.floatText(sim.pos.x, 1.9, sim.pos.z, '💔', '#ff8ab0')
-      })
-    }
     this.placeMenu(x, y)
   }
 
@@ -565,6 +604,21 @@ export class UI {
     }
     parts.push(`<div class="tag-row">${tags.join('')}</div>`)
 
+    // who they get on with, and who they very much do not
+    const others = this.game.sims.filter((o) => o !== sim && o.alive)
+    if (!sim.dead && others.length) {
+      const rows = others.map((o) => {
+        const v = this.game.relationships.get(sim, o)
+        const rel = this.game.relationships.label(v)
+        const pct = (v + 100) / 2
+        return `<div class="rel-row"><span class="rn">${o.name}</span>` +
+          `<span class="rv" style="color:${rel.color}">${rel.text}</span>` +
+          `<div class="rel-bar"><i style="left:${Math.min(pct, 50)}%;width:${Math.abs(v) / 2}%;` +
+          `background:${rel.color}"></i></div></div>`
+      }).join('')
+      parts.push(`<div class="rel-block"><div class="rel-head">Relationships</div>${rows}</div>`)
+    }
+
     if (!sim.dead) {
       parts.push(`<div class="action-line">${sim.task
         ? `<b>${sim.task.label}</b>${sim.task.phase === 'route' ? ' <i>(walking there)</i>' : ''}`
@@ -587,6 +641,8 @@ export class UI {
     for (const b of Array.from(this.catTabs.children) as HTMLButtonElement[]) {
       b.classList.toggle('active', b.dataset.cat === this.activeCategory)
     }
+    // items are about to be replaced under the cursor, so no mouseleave will fire
+    this.hideTooltip()
     this.catGrid.innerHTML = ''
 
     if (showFloors) {

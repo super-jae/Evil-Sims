@@ -93,8 +93,20 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 #topbar {
   position: absolute; top: 12px; left: 12px; right: 12px;
   display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+  /* wrap rather than push controls off the right edge on narrow windows */
+  flex-wrap: wrap; row-gap: 8px;
 }
-.hud-group { display: flex; gap: 10px; align-items: center; }
+.hud-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; row-gap: 8px; min-width: 0; }
+
+/* shed the least useful width first so the mode buttons never get clipped */
+@media (max-width: 1180px) {
+  .hud-chip { padding: 8px 11px; }
+  .hud-chip .lbl { display: none; }
+}
+@media (max-width: 820px) {
+  #clock-d { display: none; }
+  .mode-btn { padding: 0 11px; }
+}
 .hud-chip {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 14px; font-size: 13px; font-weight: bold; letter-spacing: .4px;
@@ -147,7 +159,10 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 /* ---------------- needs panel ---------------- */
 #needs {
   position: absolute; right: 12px; bottom: 12px; width: 268px; padding: 14px 16px 16px;
+  transition: right .18s ease;
 }
+/* the build catalog occupies the same corner; slide the panel clear of it */
+body.build-mode #needs { right: 344px; }
 #needs h3 { margin: 0 0 2px; font-size: 15px; letter-spacing: .5px; }
 #needs .sub { font-size: 11px; color: var(--dim); margin-bottom: 12px; letter-spacing: .3px; }
 .need-row { margin-bottom: 9px; }
@@ -196,6 +211,30 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .ctx-item.danger:hover:not(:disabled) { background: rgba(255,92,88,.14); }
 .ctx-item.evil { color: var(--evil); }
 .ctx-item.evil:hover:not(:disabled) { background: rgba(176,108,255,.15); }
+
+.ctx-scroll { max-height: 46vh; overflow-y: auto; margin: 0 -2px; padding: 0 2px; }
+.ctx-scroll::-webkit-scrollbar { width: 5px; }
+.ctx-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 3px; }
+.ctx-sep { height: 1px; background: var(--stroke); margin: 5px 6px; }
+
+/* ---------------- relationships ---------------- */
+.rel-block { margin-top: 12px; border-top: 1px solid var(--stroke); padding-top: 9px; }
+.rel-head {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.3px;
+  color: var(--dimmer); margin-bottom: 6px;
+}
+.rel-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 6px; }
+.rel-row .rn { font-size: 11.5px; }
+.rel-row .rv { font-size: 10px; text-align: right; }
+.rel-bar {
+  grid-column: 1 / -1; position: relative; height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,.09); overflow: hidden;
+}
+.rel-bar::before {
+  content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px;
+  background: rgba(255,255,255,.25);
+}
+.rel-bar i { position: absolute; top: 0; bottom: 0; border-radius: 2px; transition: all .3s; }
 
 /* ---------------- catalog (build/buy) ---------------- */
 #catalog {
@@ -340,5 +379,6 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 @media (max-width: 900px) {
   #catalog { width: 260px; }
   #needs { width: 226px; }
+  body.build-mode #needs { right: 284px; }
   .sim-meta { min-width: 78px; }
 }

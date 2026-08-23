@@ -29,7 +29,7 @@ export class CameraRig {
   maxDistance = 62
   /** Height of the point the camera orbits and aims at. */
   lookHeight = 0.9
-  bounds = 30
+  bounds = 22
   /** Set true to hide the roof/upper walls automatically when zoomed in low. */
   cutawayActive = false
 
@@ -125,6 +125,8 @@ export class Input {
   onRightClick: (p: PointerState, ev: PointerEvent) => void = () => {}
   onKey: (code: string, ev: KeyboardEvent) => void = () => {}
   onWheelZoom: (delta: number) => void = () => {}
+  /** Fired when a gesture is abandoned rather than finished (blur, cancel). */
+  onCancel: () => void = () => {}
 
   constructor(
     private el: HTMLCanvasElement,
@@ -138,7 +140,11 @@ export class Input {
     el.addEventListener('wheel', this.handleWheel, { passive: false })
     window.addEventListener('keydown', this.handleKeyDown)
     window.addEventListener('keyup', this.handleKeyUp)
-    window.addEventListener('blur', () => { this.keys.clear(); this.pointer.down = false })
+    // A gesture can end without a pointerup: alt-tab, a lost pointer capture, a
+    // touch cancelled by the browser. Any of those used to leave the input in a
+    // half-pressed state, which broke drag-to-pan and stranded a carried sim.
+    el.addEventListener('pointercancel', this.handleCancel)
+    window.addEventListener('blur', this.handleCancel)
   }
 
   private setPointer(ev: PointerEvent) {
@@ -194,8 +200,22 @@ export class Input {
       if (button === 2) this.onRightClick(this.pointer, ev)
       else if (button === 0) this.onClick(this.pointer, ev)
     }
+    this.resetPointer()
+  }
+
+  /** Return the pointer to a known-good resting state. */
+  private resetPointer() {
+    this.pointer.down = false
+    this.pointer.dragged = false
     this.pointer.button = -1
     this.suppressPan = false
+  }
+
+  private handleCancel = () => {
+    this.keys.clear()
+    const wasDown = this.pointer.down
+    this.resetPointer()
+    if (wasDown) this.onCancel()
   }
 
   private handleWheel = (ev: WheelEvent) => {

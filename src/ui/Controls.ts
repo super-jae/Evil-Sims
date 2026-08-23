@@ -75,6 +75,14 @@ export class Controls {
       if (obj) ui.openObjectMenu(obj, x, y)
     }
 
+    input.onCancel = () => {
+      if (game.dragging) game.endDrag()
+      this.pendingSim = null
+      this.painting = false
+      ui.hideTooltip()
+      this.flush(true)
+    }
+
     input.onKey = (code, ev) => this.onKey(code, ev)
   }
 
@@ -106,6 +114,10 @@ export class Controls {
         break
       case 'KeyF':
         if (g.selected) g.rig.lookAt(g.selected.pos, 13)
+        break
+      case 'Home':
+      case 'KeyC':
+        g.frameHousehold()
         break
       case 'Tab': {
         ev.preventDefault()
