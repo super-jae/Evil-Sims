@@ -451,16 +451,30 @@ export class Engine {
     }
   }
 
-  /** Reduce resolution when the frame budget is blown (called by the game loop). */
+  /**
+   * Reduce resolution and drop effects when the frame budget is blown.
+   *
+   * Every threshold here is hysteretic: an effect needs a clearly better score
+   * to come back than the one that dropped it. With a single threshold each,
+   * a machine sitting near the boundary flipped ambient occlusion, anti-aliasing
+   * and defocus on and off every second or so, and each flip reallocated the
+   * render targets — which is what the visible blinking was.
+   */
   setQualityScale(scale: number) {
+    if (scale >= 0.90) this.gtao.enabled = true
+    else if (scale <= 0.78) this.gtao.enabled = false
+
+    if (scale >= 0.86) this.smaa.enabled = true
+    else if (scale <= 0.72) this.smaa.enabled = false
+
+    if (scale >= 0.84) this.tiltH.enabled = this.tiltV.enabled = true
+    else if (scale <= 0.70) this.tiltH.enabled = this.tiltV.enabled = false
+
     const target = Math.max(0.7, Math.min(2, window.devicePixelRatio * scale))
-    if (Math.abs(target - this.pixelRatioCap) < 0.05) return
+    // reallocating every render target is itself a visible hitch, so only do it
+    // for a change big enough to be worth it
+    if (Math.abs(target - this.pixelRatioCap) < 0.1) return
     this.pixelRatioCap = target
-    // ambient occlusion and defocus are the first things to go when the frame
-    // budget is tight
-    this.gtao.enabled = scale > 0.82
-    this.tiltH.enabled = this.tiltV.enabled = scale > 0.72
-    this.smaa.enabled = scale > 0.75
     this.resize()
   }
 

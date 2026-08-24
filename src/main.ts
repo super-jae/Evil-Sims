@@ -80,6 +80,9 @@ let last = performance.now()
 let frameAccum = 0
 let frameCount = 0
 let qualityScale = 1
+let slowSamples = 0
+let fastSamples = 0
+let lastQualityChange = 0
 
 function frame(now: number) {
   requestAnimationFrame(frame)
@@ -90,13 +93,32 @@ function frame(now: number) {
   controls.update(dt)
   ui.tick(dt)
 
-  // adaptive resolution so heavy fires do not tank the framerate
+  // Adaptive resolution so heavy fires do not tank the framerate.
+  //
+  // The recovery threshold has to be reachable: a vsynced 60Hz display can
+  // never report better than ~16.7ms, so asking for less than that meant
+  // quality could only ever ratchet downwards, dropping an effect and
+  // reallocating render targets at every step until it bottomed out.
   frameAccum += dt
   frameCount++
-  if (frameAccum > 1.5) {
+  if (frameAccum > 1) {
     const avg = frameAccum / frameCount
-    if (avg > 0.024 && qualityScale > 0.62) qualityScale -= 0.14
-    else if (avg < 0.0135 && qualityScale < 1) qualityScale = Math.min(1, qualityScale + 0.1)
+    if (avg > 0.028) { slowSamples++; fastSamples = 0 }          // below ~36fps
+    else if (avg < 0.019) { fastSamples++; slowSamples = 0 }     // above ~52fps
+    else { slowSamples = 0; fastSamples = 0 }
+
+    // require a sustained trend, and leave time between changes
+    if (now - lastQualityChange > 4000) {
+      if (slowSamples >= 2 && qualityScale > 0.6) {
+        qualityScale = Math.max(0.6, qualityScale - 0.15)
+        lastQualityChange = now
+        slowSamples = 0
+      } else if (fastSamples >= 3 && qualityScale < 1) {
+        qualityScale = Math.min(1, qualityScale + 0.15)
+        lastQualityChange = now
+        fastSamples = 0
+      }
+    }
     game.engine.setQualityScale(qualityScale)
     frameAccum = 0
     frameCount = 0
