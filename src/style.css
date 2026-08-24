@@ -137,9 +137,11 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 }
 .sim-card {
   display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 8px;
-  border-radius: 999px; transition: transform .12s, border-color .12s, background .12s;
+  border-radius: 999px; transition: transform .12s ease, border-color .12s, background .12s;
   border: 1px solid transparent; cursor: pointer;
+  will-change: transform;
 }
+.sim-card:active { transform: translateX(4px) scale(.985); }
 .sim-card:hover { transform: translateX(4px); }
 .sim-card.selected { border-color: var(--plumbob); background: var(--panel-hi); }
 .sim-card.dead { opacity: .42; filter: grayscale(1); }
@@ -154,7 +156,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .sim-mood { font-size: 10.5px; color: var(--dim); letter-spacing: .3px; }
 .mini-needs { display: flex; flex-direction: column; gap: 2px; width: 46px; }
 .mini-need { height: 3px; border-radius: 2px; background: rgba(255,255,255,.12); overflow: hidden; }
-.mini-need i { display: block; height: 100%; border-radius: 2px; transition: width .3s linear, background .3s; }
+.mini-need i { display: block; height: 100%; border-radius: 2px; transition: width .25s linear, background .3s; }
 
 /* ---------------- needs panel ---------------- */
 #needs {

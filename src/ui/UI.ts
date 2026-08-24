@@ -66,6 +66,19 @@ export class UI {
 
   private activeCategory: Category = 'kitchen'
   private accum = 0
+  /** Stable roster card elements, keyed by sim id. */
+  private rosterCards = new Map<number, { card: HTMLElement; mood: HTMLElement; bars: HTMLElement[] }>()
+  private needsSimId: number | null = null
+  private needsRefs: {
+    sub: HTMLElement
+    bars: { fill: HTMLElement; bar: HTMLElement; value: HTMLElement }[]
+    tagRow: HTMLElement
+    relBlock: HTMLElement
+    relList: HTMLElement
+    action: HTMLElement
+    queue: HTMLElement
+    relIds: string
+  } | null = null
 
   constructor(root: HTMLElement, game: Game) {
     this.root = root
@@ -543,58 +556,120 @@ export class UI {
     }
   }
 
+  /**
+   * Roster cards are built once and then updated in place.
+   *
+   * Rebuilding them every tick meant the hover transform restarted several
+   * times a second (the cards visibly shook), and a click whose mouseup landed
+   * after a rebuild was dropped entirely, because the element the mousedown
+   * hit no longer existed.
+   */
   private renderRoster() {
     const g = this.game
-    this.rosterEl.innerHTML = ''
+    if (this.rosterCards.size !== g.sims.length) {
+      this.rosterEl.innerHTML = ''
+      this.rosterCards.clear()
+      for (const sim of g.sims) {
+        const card = el('div', 'sim-card panel')
+        const avatar = el('div', 'avatar', sim.name[0])
+        avatar.style.background =
+          `linear-gradient(160deg, #${sim.avatar.look.skin.toString(16).padStart(6, '0')}, ` +
+          `#${sim.avatar.look.hair.toString(16).padStart(6, '0')})`
+        const meta = el('div', 'sim-meta')
+        const name = el('div', 'sim-name', sim.name)
+        const mood = el('div', 'sim-mood')
+        meta.append(name, mood)
+        const mini = el('div', 'mini-needs')
+        const bars: HTMLElement[] = []
+        for (let i = 0; i < 4; i++) {
+          const bar = el('div', 'mini-need')
+          const fill = el('i')
+          bar.appendChild(fill)
+          mini.appendChild(bar)
+          bars.push(fill)
+        }
+        card.append(avatar, meta, mini)
+        card.onclick = () => { g.selectSim(sim); audio.play('click') }
+        card.oncontextmenu = (e) => { e.preventDefault(); this.openSimMenu(sim, e.clientX, e.clientY) }
+        this.rosterEl.appendChild(card)
+        this.rosterCards.set(sim.id, { card, mood, bars })
+      }
+    }
+
+    const keys = ['hunger', 'bladder', 'energy', 'hygiene'] as const
     for (const sim of g.sims) {
-      const card = el('div', `sim-card panel ${g.selected === sim ? 'selected' : ''} ${sim.dead ? 'dead' : ''}`)
-      const avatar = el('div', 'avatar', sim.name[0])
-      avatar.style.background = `linear-gradient(160deg, #${sim.avatar.look.skin.toString(16).padStart(6, '0')}, #${sim.avatar.look.hair.toString(16).padStart(6, '0')})`
-      const meta = el('div', 'sim-meta')
+      const refs = this.rosterCards.get(sim.id)
+      if (!refs) continue
+      refs.card.classList.toggle('selected', g.selected === sim)
+      refs.card.classList.toggle('dead', sim.dead)
       const deathName = sim.deathId ? DEATHS[sim.deathId as keyof typeof DEATHS]?.name : ''
-      meta.innerHTML =
-        `<div class="sim-name">${sim.name}</div>` +
-        `<div class="sim-mood" style="color:${sim.dead ? '#98a0b4' : sim.mood.color}">` +
-        `${sim.dead ? deathName : sim.mood.label}</div>`
-      const mini = el('div', 'mini-needs')
-      for (const k of ['hunger', 'bladder', 'energy', 'hygiene'] as const) {
-        const bar = el('div', 'mini-need')
-        const fill = el('i')
-        fill.style.width = `${sim.dead ? 0 : sim.needs[k]}%`
-        fill.style.background = needColor(sim.needs[k])
-        bar.appendChild(fill)
-        mini.appendChild(bar)
-      }
-      card.append(avatar, meta, mini)
-      card.onclick = () => { g.selectSim(sim); audio.play('click') }
-      card.oncontextmenu = (e) => {
-        e.preventDefault()
-        this.openSimMenu(sim, e.clientX, e.clientY)
-      }
-      this.rosterEl.appendChild(card)
+      const label = sim.dead ? (deathName ?? 'Deceased') : sim.mood.label
+      if (refs.mood.textContent !== label) refs.mood.textContent = label
+      refs.mood.style.color = sim.dead ? '#98a0b4' : sim.mood.color
+      keys.forEach((k, i) => {
+        const v = sim.dead ? 0 : sim.needs[k]
+        refs.bars[i].style.width = `${v}%`
+        refs.bars[i].style.background = needColor(v)
+      })
     }
   }
 
+  /** Same story as the roster: a stable skeleton, updated in place. */
   private renderNeeds() {
     const sim = this.game.selected
-    if (!sim) { this.needsEl.style.display = 'none'; return }
+    if (!sim) { this.needsEl.style.display = 'none'; this.needsSimId = null; return }
     this.needsEl.style.display = ''
-    const parts: string[] = []
-    parts.push(`<h3>${sim.fullName}</h3>`)
+
+    if (this.needsSimId !== sim.id) {
+      this.needsSimId = sim.id
+      this.needsEl.innerHTML = ''
+      const title = el('h3', '', sim.fullName)
+      const sub = el('div', 'sub')
+      this.needsEl.append(title, sub)
+      const bars: { fill: HTMLElement; bar: HTMLElement; value: HTMLElement }[] = []
+      for (const k of NEED_KEYS) {
+        const meta = NEED_META[k]
+        const row = el('div', 'need-row')
+        const head = el('div', 'need-head')
+        head.innerHTML = `<span class="n">${meta.glyph} ${meta.label}</span><span class="v">0</span>`
+        const bar = el('div', 'need-bar')
+        const fill = el('i')
+        bar.appendChild(fill)
+        row.append(head, bar)
+        this.needsEl.appendChild(row)
+        bars.push({ fill, bar, value: head.querySelector('.v') as HTMLElement })
+      }
+      const tagRow = el('div', 'tag-row')
+      const relBlock = el('div', 'rel-block')
+      const relHead = el('div', 'rel-head', 'Relationships')
+      const relList = el('div', 'rel-list')
+      relBlock.append(relHead, relList)
+      const action = el('div', 'action-line')
+      const queue = el('div', 'queue')
+      this.needsEl.append(tagRow, relBlock, action, queue)
+      this.needsRefs = { sub, bars, tagRow, relBlock, relList, action, queue, relIds: '' }
+    }
+
+    const r = this.needsRefs
+    if (!r) return
+
     if (sim.dead) {
       const d = DEATHS[sim.deathId as keyof typeof DEATHS]
-      parts.push(`<div class="sub" style="color:#b06cff">${d?.icon ?? '💀'} ${d?.name ?? 'Deceased'}</div>`)
+      r.sub.innerHTML = `${d?.icon ?? '💀'} ${d?.name ?? 'Deceased'}`
+      r.sub.style.color = '#b06cff'
     } else {
-      parts.push(`<div class="sub" style="color:${sim.mood.color}">${sim.mood.label} · age ${Math.floor(sim.ageDays)}d</div>`)
+      r.sub.textContent = `${sim.mood.label} · age ${Math.floor(sim.ageDays)}d`
+      r.sub.style.color = sim.mood.color
     }
-    for (const k of NEED_KEYS) {
+
+    NEED_KEYS.forEach((k, i) => {
       const v = sim.dead ? 0 : sim.needs[k]
-      const meta = NEED_META[k]
-      parts.push(
-        `<div class="need-row"><div class="need-head"><span class="n">${meta.glyph} ${meta.label}</span>` +
-        `<span class="v">${Math.round(v)}</span></div>` +
-        `<div class="need-bar ${v < meta.critical ? 'critical' : ''}"><i style="width:${v}%;background:${needColor(v)}"></i></div></div>`)
-    }
+      const ref = r.bars[i]
+      ref.value.textContent = String(Math.round(v))
+      ref.fill.style.width = `${v}%`
+      ref.fill.style.background = needColor(v)
+      ref.bar.classList.toggle('critical', v < NEED_META[k].critical)
+    })
 
     const tags: string[] = []
     for (const id of sim.traits.ids) {
@@ -613,43 +688,47 @@ export class UI {
       if (sim.bodyTemp > 70) tags.push(`<span class="tag bad">Hot ${Math.round(sim.bodyTemp)}°</span>`)
       if (sim.espressos >= 1) tags.push(`<span class="tag">Espressos ×${Math.floor(sim.espressos)}</span>`)
     }
-    parts.push(`<div class="tag-row">${tags.join('')}</div>`)
+    const tagHtml = tags.join('')
+    if (r.tagRow.innerHTML !== tagHtml) r.tagRow.innerHTML = tagHtml
 
-    // who they get on with, and who they very much do not
-    const others = this.game.sims.filter((o) => o !== sim && o.alive)
-    if (!sim.dead && others.length) {
-      const rows = others.map((o) => {
-        const v = this.game.relationships.get(sim, o)
-        const rel = this.game.relationships.label(v)
-        const pct = (v + 100) / 2
-        return `<div class="rel-row" data-sim="${o.id}" title="Click to interact with ${o.name}">` +
-          `<span class="rn">${o.name}</span>` +
-          `<span class="rv" style="color:${rel.color}">${rel.text}</span>` +
-          `<div class="rel-bar"><i style="left:${Math.min(pct, 50)}%;width:${Math.abs(v) / 2}%;` +
-          `background:${rel.color}"></i></div></div>`
-      }).join('')
-      parts.push(`<div class="rel-block"><div class="rel-head">Relationships</div>${rows}</div>`)
-    }
-
-    if (!sim.dead) {
-      parts.push(`<div class="action-line">${sim.task
-        ? `<b>${sim.task.label}</b>${sim.task.phase === 'route' ? ' <i>(walking there)</i>' : ''}`
-        : '<i>Idle</i>'}${sim.thought ? `<br/>“${sim.thought}”` : ''}</div>`)
-      if (sim.queue.length) {
-        parts.push(`<div class="queue">${sim.queue.map((q) => `<span class="q">${q.label}</span>`).join('')}</div>`)
+    // Relationship rows are clickable, so only rebuild them when the cast
+    // changes — otherwise a click can land between a teardown and a rebuild.
+    const others = sim.dead ? [] : this.game.sims.filter((o) => o !== sim && o.alive)
+    r.relBlock.style.display = others.length ? '' : 'none'
+    const ids = others.map((o) => o.id).join(',')
+    if (ids !== r.relIds) {
+      r.relIds = ids
+      r.relList.innerHTML = ''
+      for (const other of others) {
+        const row = el('div', 'rel-row')
+        row.title = `Click to interact with ${other.name}`
+        row.innerHTML =
+          `<span class="rn">${other.name}</span><span class="rv"></span>` +
+          '<div class="rel-bar"><i></i></div>'
+        row.onclick = (ev) => this.openSimMenu(other, ev.clientX - 220, ev.clientY - 40)
+        r.relList.appendChild(row)
       }
     }
-    this.needsEl.innerHTML = parts.join('')
+    others.forEach((other, i) => {
+      const row = r.relList.children[i] as HTMLElement
+      if (!row) return
+      const v = this.game.relationships.get(sim, other)
+      const rel = this.game.relationships.label(v)
+      const rv = row.querySelector('.rv') as HTMLElement
+      rv.textContent = rel.text
+      rv.style.color = rel.color
+      const fill = row.querySelector('.rel-bar i') as HTMLElement
+      fill.style.left = `${Math.min((v + 100) / 2, 50)}%`
+      fill.style.width = `${Math.abs(v) / 2}%`
+      fill.style.background = rel.color
+    })
 
-    // each relationship row is a shortcut into the interaction menu for that pair
-    for (const row of Array.from(this.needsEl.querySelectorAll('.rel-row'))) {
-      const id = Number((row as HTMLElement).dataset.sim)
-      const other = this.game.sims.find((o) => o.id === id)
-      if (!other) continue
-      ;(row as HTMLElement).onclick = (ev) => {
-        this.openSimMenu(other, ev.clientX - 220, ev.clientY - 40)
-      }
-    }
+    const actionHtml = sim.dead ? '' :
+      `${sim.task ? `<b>${sim.task.label}</b>${sim.task.phase === 'route' ? ' <i>(walking there)</i>' : ''}` : '<i>Idle</i>'}` +
+      `${sim.thought ? `<br/>“${sim.thought}”` : ''}`
+    if (r.action.innerHTML !== actionHtml) r.action.innerHTML = actionHtml
+    const queueHtml = sim.dead ? '' : sim.queue.map((q) => `<span class="q">${q.label}</span>`).join('')
+    if (r.queue.innerHTML !== queueHtml) r.queue.innerHTML = queueHtml
   }
 
   private refreshCatalog() {

@@ -49,6 +49,7 @@ async function boot0() {
   // debug handle: lets the browser console (and the smoke tests) drive the game
   ;(window as unknown as Record<string, unknown>).__game = game
   ;(window as unknown as Record<string, unknown>).__socials = SOCIALS
+  ;(window as unknown as Record<string, unknown>).__ui = ui
   ui.refresh()
   await advance()
   await advance()
