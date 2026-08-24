@@ -223,7 +223,13 @@ body.build-mode #needs { right: 344px; }
   font-size: 10px; text-transform: uppercase; letter-spacing: 1.3px;
   color: var(--dimmer); margin-bottom: 6px;
 }
-.rel-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 6px; }
+.rel-head::after { content: ' — click to interact'; color: rgba(176,108,255,.75); }
+.rel-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 6px;
+  cursor: pointer; padding: 3px 5px; margin-left: -5px; margin-right: -5px;
+  border-radius: 6px; transition: background .12s;
+}
+.rel-row:hover { background: rgba(176,108,255,.16); }
 .rel-row .rn { font-size: 11.5px; }
 .rel-row .rv { font-size: 10px; text-align: right; }
 .rel-bar {

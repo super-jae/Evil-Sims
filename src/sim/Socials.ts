@@ -149,6 +149,92 @@ export const SOCIALS: SocialDef[] = [
     autonomy: (c) => hostility(c) * 1.5,
   },
   {
+    id: 'argue', label: 'Pick an Argument', tone: 'mean',
+    duration: 20, anim: 'argue', targetAnim: 'argue', relation: -12,
+    hint: 'A shouting match. Both of them come away angrier than they went in.',
+    apply: (c) => {
+      c.target.rage += 20 * c.target.traits.temper
+      c.actor.rage += 9 * c.actor.traits.temper
+      c.target.needs.social -= 16
+      c.target.needs.fun -= 12
+      c.actor.needs.fun -= 4
+      audio.speak(c.actor.id * 37 + 11, 5, 'angry', c.actor.pos)
+      audio.speak(c.target.id * 37 + 11, 4, 'angry', c.target.pos)
+      c.game.floatText(c.target.pos.x, 2.0, c.target.pos.z, '💢', '#ff8a4a')
+      react(c.target, 'You never listen!')
+    },
+    autonomy: (c) => hostility(c) * 2.0 * c.actor.traits.temper,
+  },
+  {
+    id: 'spit', label: 'Spit On Them', tone: 'cruel',
+    duration: 6, anim: 'taunt', targetAnim: 'recoil', relation: -32,
+    hint: 'Filthy, humiliating, and it ruins whatever washing they had done.',
+    apply: (c) => {
+      c.target.needs.hygiene = Math.max(0, c.target.needs.hygiene - 38)
+      c.target.embarrassment += 24 * c.target.traits.shame
+      c.target.rage += 26 * c.target.traits.temper
+      c.target.soaked = Math.max(c.target.soaked, 20)
+      c.target.addBuff('spatupon', 'Spat Upon', 'bad', 300)
+      c.game.floatText(c.target.pos.x, 1.9, c.target.pos.z, '💧', '#a8e04a')
+      amuseWitnesses(c, 16)
+      react(c.target, 'Did you just — ?')
+    },
+    autonomy: (c) => Math.max(0, hostility(c) - 0.55) * 1.8,
+  },
+  {
+    id: 'throwDrink', label: 'Throw a Drink in Their Face', tone: 'cruel',
+    duration: 8, anim: 'shove', targetAnim: 'recoil', relation: -30,
+    hint: 'Leaves them soaking wet for hours.',
+    danger: 'A wet sim plus a broken appliance is an electrocution.',
+    apply: (c) => {
+      c.target.soaked = Math.max(c.target.soaked, 160)
+      c.target.needs.hygiene = Math.max(0, c.target.needs.hygiene - 18)
+      c.target.embarrassment += 22 * c.target.traits.shame
+      c.target.rage += 22 * c.target.traits.temper
+      c.target.needs.comfort -= 24
+      const t = c.target.tileOf(c.game)
+      c.game.makePuddle(t.x, t.z, 'water')
+      c.game.splash(c.target.pos.x, 1.2, c.target.pos.z)
+      audio.play('splash', c.target.pos)
+      amuseWitnesses(c, 16)
+      react(c.target, 'It is in my EYES.')
+    },
+    autonomy: () => 0,
+  },
+  {
+    id: 'wedgie', label: 'Give Them a Wedgie', tone: 'cruel',
+    duration: 8, anim: 'shove', targetAnim: 'cower', relation: -28,
+    hint: 'Pure humiliation, and far worse with an audience.',
+    apply: (c) => {
+      const crowd = 1 + witnesses(c).length * 0.5
+      c.target.embarrassment += 22 * c.target.traits.shame * crowd
+      c.target.needs.comfort -= 32
+      c.target.rage += 16 * c.target.traits.temper
+      c.target.clearTask(c.game)
+      amuseWitnesses(c, 20)
+      c.game.floatText(c.target.pos.x, 1.9, c.target.pos.z, '😖', '#ff8ab0')
+      react(c.target, 'WHY.')
+    },
+    autonomy: (c) => Math.max(0, hostility(c) - 0.4) * 1.2 * c.actor.traits.mirth,
+  },
+  {
+    id: 'mockGrief', label: 'Mock Their Grief', tone: 'cruel',
+    duration: 14, anim: 'laugh', targetAnim: 'cry', relation: -45,
+    hint: 'Only once somebody in the household has died.',
+    danger: 'About as cruel as this game gets. Rage and shame both spike.',
+    requires: (c) => c.game.sims.some((s) => s.dead),
+    apply: (c) => {
+      c.target.embarrassment += 26 * c.target.traits.shame
+      c.target.rage += 34 * c.target.traits.temper
+      c.target.needs.fun -= 30
+      c.target.needs.social -= 25
+      c.target.addBuff('grieving', 'Grief Mocked', 'bad', 600)
+      c.game.floatText(c.target.pos.x, 1.9, c.target.pos.z, '💔', '#b06cff')
+      react(c.target, 'They were my family.')
+    },
+    autonomy: () => 0,
+  },
+  {
     id: 'rumor', label: 'Spread Rumors About Them', tone: 'mean',
     duration: 18, anim: 'wave', targetAnim: 'idle', relation: -10,
     hint: 'Turns the rest of the household against them.',

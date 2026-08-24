@@ -515,6 +515,17 @@ export class UI {
     this.renderRoster()
     this.renderNeeds()
     this.refreshCatalog()
+    this.updateHint()
+  }
+
+  /** Keeps the bottom hint pointed at whatever the player can usefully do next. */
+  private updateHint() {
+    if (this.game.mode !== 'live') return
+    const sel = this.game.selected
+    this.setHint(sel && sel.alive
+      ? `<b>${sel.name}</b> selected — <b>click another sim</b> to be cruel to them. ` +
+        'Click objects for actions, drag a sim to carry them.'
+      : 'Click a sim to select them, then click another sim to interact.')
   }
 
   /** Cheap per-frame updates (clock, bars) at a fixed rate. */
@@ -611,7 +622,8 @@ export class UI {
         const v = this.game.relationships.get(sim, o)
         const rel = this.game.relationships.label(v)
         const pct = (v + 100) / 2
-        return `<div class="rel-row"><span class="rn">${o.name}</span>` +
+        return `<div class="rel-row" data-sim="${o.id}" title="Click to interact with ${o.name}">` +
+          `<span class="rn">${o.name}</span>` +
           `<span class="rv" style="color:${rel.color}">${rel.text}</span>` +
           `<div class="rel-bar"><i style="left:${Math.min(pct, 50)}%;width:${Math.abs(v) / 2}%;` +
           `background:${rel.color}"></i></div></div>`
@@ -628,6 +640,16 @@ export class UI {
       }
     }
     this.needsEl.innerHTML = parts.join('')
+
+    // each relationship row is a shortcut into the interaction menu for that pair
+    for (const row of Array.from(this.needsEl.querySelectorAll('.rel-row'))) {
+      const id = Number((row as HTMLElement).dataset.sim)
+      const other = this.game.sims.find((o) => o.id === id)
+      if (!other) continue
+      ;(row as HTMLElement).onclick = (ev) => {
+        this.openSimMenu(other, ev.clientX - 220, ev.clientY - 40)
+      }
+    }
   }
 
   private refreshCatalog() {

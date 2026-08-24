@@ -55,13 +55,24 @@ export class Controls {
 
     input.onClick = () => {
       if (game.mode !== 'live') return
+      const r = game.engine.renderer.domElement.getBoundingClientRect()
+      const mx = r.left + input.pointer.x + 8
+      const my = r.top + input.pointer.y - 8
       const sim = game.pickSim()
-      if (sim) { game.selectSim(sim); audio.play('click'); return }
-      const obj = game.pickObject()
-      if (obj) {
-        const r = game.engine.renderer.domElement.getBoundingClientRect()
-        ui.openObjectMenu(obj, r.left + input.pointer.x + 8, r.top + input.pointer.y - 8)
+      if (sim) {
+        const actor = game.selected
+        // clicking a *different* sim offers what the selected one can do to them,
+        // which is far more discoverable than requiring a right-click
+        if (actor && actor.alive && actor !== sim && sim.alive) {
+          ui.openSimMenu(sim, mx, my)
+        } else {
+          game.selectSim(sim)
+        }
+        audio.play('click')
+        return
       }
+      const obj = game.pickObject()
+      if (obj) ui.openObjectMenu(obj, mx, my)
     }
 
     input.onRightClick = () => {

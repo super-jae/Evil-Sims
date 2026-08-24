@@ -79,16 +79,28 @@ ordinary household objects. Some worked examples:
 
 ## Turning them against each other
 
-Select one sim, then right-click another: everything the first can do to the second
-appears in the menu, from a compliment down to starting a brawl. Every sim holds a
-private opinion of every other, from **Devoted** down to **Nemesis**, shown in the
-panel of whoever is selected.
+Select one sim, then **click another sim** — everything the first can do to the second
+appears in the menu, from a compliment down to starting a brawl. Three ways in, so it is
+hard to miss:
+
+- **Click another sim** in the world while one is selected
+- **Click a name in the Relationships list** in the selected sim's panel
+- **Right-click** any sim
+
+Every sim holds a private opinion of every other, from **Devoted** down to **Nemesis**,
+shown in the panel of whoever is selected. The menu header names the pair and the
+current standing, so you always know who is about to do what to whom.
 
 The point is not the insult itself. Each cruelty feeds a system that can kill:
 
 | Do this | Because |
 |---|---|
-| **Insult**, **Blame Them for Everything** | Rage accumulates, and a sim who fills the meter dies of it |
+| **Insult**, **Blame Them for Everything**, **Pick an Argument** | Rage accumulates, and a sim who fills the meter dies of it. Arguing is cheap and repeatable, and angers the instigator too |
+| **Slap Them**, **Shove Them** | Knocks them off whatever they were doing and enrages them |
+| **Spit On Them** | Destroys their hygiene, which makes every later humiliation land harder |
+| **Throw a Drink in Their Face** | Soaks them for hours and leaves a puddle. Wet sim plus broken appliance equals electrocution |
+| **Give Them a Wedgie** | Humiliation that scales with the size of the audience |
+| **Mock Their Grief** | Only once somebody has died. Rage and shame together, and about as cruel as this gets |
 | **Mock Their Appearance**, **Laugh at Their Misfortune** | Embarrassment, which is how mortification kills. Mocking hits far harder on a sim who has not showered, and laughing is only available while they are already having a bad time |
 | **Tell a Cruel Joke** | The target is humiliated, but everyone *watching* finds it hilarious — and hysteria is its own cause of death |
 | **Wake Them Up Rudely** | Only while they sleep. Costs energy and adds two hours of sleep debt, which is the road to death by exhaustion |
@@ -97,8 +109,8 @@ The point is not the insult itself. Each cruelty feeds a system that can kill:
 | **Start a Fight** | Both come away exhausted and filthy; the loser is enraged and humiliated |
 | **Spread Rumors** | Turns the entire rest of the household against them at once |
 
-Cruelty is contagious. Sims never start on each other unprompted while everyone is on
-neutral terms — but once you have soured a relationship, or spread a rumor, they carry
+Nineteen interactions in all. Cruelty is contagious: sims never start on each other
+unprompted while everyone is on neutral terms — but once you have soured a relationship, or spread a rumor, they carry
 on by themselves. In testing, souring a single pair produced nine more unprompted acts
 of cruelty and one sim who raged themselves to death without further help.
 
