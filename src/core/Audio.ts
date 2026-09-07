@@ -434,6 +434,9 @@ export class AudioEngine {
 
   stopAllLoops() { for (const id of [...this.loops.keys()]) this.stopLoop(id) }
 
+  async suspend() { await this.ctx?.suspend().catch(() => {}) }
+  async resume() { if (this.ctx?.state === 'suspended') await this.ctx.resume().catch(() => {}) }
+
   // ------------------------------------------------------------------ music
 
   setMood(m: MusicMood) { this.mood = m }

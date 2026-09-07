@@ -78,57 +78,32 @@ startBtn.addEventListener('click', async () => {
 // ------------------------------------------------------------------ loop
 
 let last = performance.now()
-let frameAccum = 0
-let frameCount = 0
-let qualityScale = 1
-let slowSamples = 0
-let fastSamples = 0
-let lastQualityChange = 0
+let lastDraw = 0
+let raf = 0
+let running = false
+let started = false
+let savedSpeed = 1
 
 function frame(now: number) {
-  requestAnimationFrame(frame)
+  if (!running) return
+  raf = requestAnimationFrame(frame)
   const dt = Math.min(0.1, (now - last) / 1000)
   last = now
 
-  game.update(dt)
+  const minFrame = 1000 / Math.max(30, game.engine.quality.maxFps)
+  const draw = now - lastDraw >= minFrame - 0.5
+  game.update(dt, draw)
   controls.update(dt)
   ui.tick(dt)
-
-  // Adaptive resolution so heavy fires do not tank the framerate.
-  //
-  // The recovery threshold has to be reachable: a vsynced 60Hz display can
-  // never report better than ~16.7ms, so asking for less than that meant
-  // quality could only ever ratchet downwards, dropping an effect and
-  // reallocating render targets at every step until it bottomed out.
-  frameAccum += dt
-  frameCount++
-  if (frameAccum > 1) {
-    const avg = frameAccum / frameCount
-    if (avg > 0.028) { slowSamples++; fastSamples = 0 }          // below ~36fps
-    else if (avg < 0.019) { fastSamples++; slowSamples = 0 }     // above ~52fps
-    else { slowSamples = 0; fastSamples = 0 }
-
-    // require a sustained trend, and leave time between changes
-    if (now - lastQualityChange > 4000) {
-      if (slowSamples >= 2 && qualityScale > 0.6) {
-        qualityScale = Math.max(0.6, qualityScale - 0.15)
-        lastQualityChange = now
-        slowSamples = 0
-      } else if (fastSamples >= 3 && qualityScale < 1) {
-        qualityScale = Math.min(1, qualityScale + 0.15)
-        lastQualityChange = now
-        fastSamples = 0
-      }
-    }
-    game.engine.setQualityScale(qualityScale)
-    frameAccum = 0
-    frameCount = 0
-  }
+  if (draw) lastDraw = now
 }
 
 function start() {
+  started = true
+  running = true
   last = performance.now()
-  requestAnimationFrame(frame)
+  lastDraw = 0
+  raf = requestAnimationFrame(frame)
 }
 
 boot0().catch((err) => {
@@ -136,11 +111,23 @@ boot0().catch((err) => {
   bootStatus.textContent = 'Something went wrong. Check the console.'
 })
 
-// pause when the tab is hidden so sims do not starve in the background
+// Pause the renderer and audio when the tab is hidden so a 144Hz desktop
+// does not keep the GPU spinning, and sims do not starve in the background.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && game) {
+  if (!game) return
+  if (document.hidden) {
+    savedSpeed = game.clock.speed
     game.clock.setSpeed(0)
     audio.stopAllLoops()
+    void audio.suspend()
+    running = false
+    cancelAnimationFrame(raf)
+    raf = 0
     ui?.refresh()
+  } else {
+    void audio.resume()
+    if (savedSpeed > 0) game.clock.setSpeed(savedSpeed)
+    ui?.refresh()
+    if (started && !running) start()
   }
 })

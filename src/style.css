@@ -127,6 +127,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .icon-btn:hover { background: var(--panel-hi); color: var(--text); }
 .icon-btn.active { background: linear-gradient(180deg, var(--plumbob), var(--plumbob-dk)); color: #06210f; }
 .icon-btn:active { transform: scale(.93); }
+.quality-btn { font-family: var(--mono); font-size: 11px; font-weight: 800; letter-spacing: 0.4px; }
 .mode-btn { width: auto; padding: 0 16px; font-weight: bold; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
 .mode-btn.active { background: linear-gradient(180deg, var(--evil), var(--evil-dk)); color: #fff; }
 

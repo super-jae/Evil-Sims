@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js'
+import { loadQuality, resolvePixelRatio, saveQuality, type QualitySettings } from './Quality'
 
 /** Color keyframes for the day/night cycle, keyed by hour. */
 interface SkyKey {
@@ -319,24 +320,37 @@ export class Engine {
   private fillLight: THREE.DirectionalLight
   private moon: THREE.DirectionalLight
   private canvas: HTMLCanvasElement
-  private pixelRatioCap = 2
+  private pixelRatioCap = 1.25
+  quality: QualitySettings
+  private shadowAccum = 0
+  private shadowDirty = true
+  private lastFocusX = 0
+  private lastFocusZ = 0
 
   /** 0..1 — how much of the lot is currently ablaze; drives the heat shimmer. */
   heat = 0
   /** 0..1 — drains color out of the world during a death sequence. */
   desat = 0
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, quality?: QualitySettings) {
     this.canvas = canvas
+    const q = quality ?? loadQuality()
+    this.quality = q
+    this.pixelRatioCap = resolvePixelRatio(q)
     this.renderer = new THREE.WebGLRenderer({
-      canvas, antialias: false, powerPreference: 'high-performance', stencil: false,
+      canvas,
+      antialias: false,
+      powerPreference: q.highPerformance ? 'high-performance' : 'default',
+      stencil: false,
     })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.pixelRatioCap))
+    this.renderer.setPixelRatio(this.pixelRatioCap)
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.32
     this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    this.renderer.shadowMap.type = q.shadowSoft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap
+    this.renderer.shadowMap.autoUpdate = false
+    this.renderer.shadowMap.needsUpdate = true
 
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 500)
     this.camera.position.set(24, 22, 24)
@@ -355,7 +369,7 @@ export class Engine {
       vertexShader: SKY_VERT, fragmentShader: SKY_FRAG,
       side: THREE.BackSide, depthWrite: false, fog: false,
     })
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(240, 40, 24), this.skyMat)
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(240, q.skyWidth, q.skyHeight), this.skyMat)
     sky.frustumCulled = false
     sky.renderOrder = -1000
     this.scene.add(sky)
@@ -363,7 +377,7 @@ export class Engine {
     // --- lights ---
     this.sun = new THREE.DirectionalLight(0xfff4e0, 1.5)
     this.sun.castShadow = true
-    this.sun.shadow.mapSize.set(3072, 3072)
+    this.sun.shadow.mapSize.set(q.shadowSize, q.shadowSize)
     this.sun.shadow.camera.near = 1
     this.sun.shadow.camera.far = 200
     this.sun.shadow.bias = -0.00035
@@ -403,14 +417,16 @@ export class Engine {
     this.gtao.blendIntensity = 0.85
     this.gtao.updateGtaoMaterial({
       radius: 0.42, distanceExponent: 1.6, thickness: 0.55,
-      distanceFallOff: 1.0, scale: 1.1, samples: 16,
+      distanceFallOff: 1.0, scale: 1.1, samples: q.gtaoSamples || 8,
     })
-    this.gtao.updatePdMaterial({ lumaPhi: 8, depthPhi: 2, normalPhi: 4, radius: 3, rings: 2, samples: 12 })
+    this.gtao.updatePdMaterial({ lumaPhi: 8, depthPhi: 2, normalPhi: 4, radius: 3, rings: 2, samples: q.gtaoDenoise || 8 })
+    this.gtao.enabled = q.gtao
     this.composer.addPass(this.gtao)
 
     // Runs on the linear HDR buffer, before tone mapping, so the threshold sits
     // above ordinary sunlit diffuse and only emissive things glow.
     this.bloom = new BloomPass(size.x, size.y, 0.7, 2.6)
+    this.bloom.enabled = q.bloom
     this.composer.addPass(this.bloom)
     this.grade = new ShaderPass(GradeShader)
     this.composer.addPass(this.grade)
@@ -424,24 +440,30 @@ export class Engine {
     this.tiltV = tilt()
     this.composer.addPass(this.tiltH)
     this.composer.addPass(this.tiltV)
-    this.setTiltShift(3.0)
 
     this.composer.addPass(new OutputPass())
 
     this.smaa = new SMAAPass(size.x, size.y)
+    this.smaa.enabled = q.smaa
     this.composer.addPass(this.smaa)
 
+    this.setTiltShift(q.tilt ? 3.0 : 0)
     this.resize()
-    window.addEventListener('resize', () => this.resize())
+    window.addEventListener('resize', this.onResize)
+    window.visualViewport?.addEventListener('resize', this.onResize)
   }
+
+  private onResize = () => this.resize()
 
   resize() {
     const w = this.canvas.clientWidth || window.innerWidth
     const h = this.canvas.clientHeight || window.innerHeight
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.pixelRatioCap))
+    this.pixelRatioCap = resolvePixelRatio(this.quality)
+    this.renderer.setPixelRatio(this.pixelRatioCap)
     this.renderer.setSize(w, h, false)
+    this.composer.setPixelRatio(this.pixelRatioCap)
     this.composer.setSize(w, h)
     this.bloom?.setSize(w, h)
     this.gtao?.setSize(w, h)
@@ -451,32 +473,45 @@ export class Engine {
     }
   }
 
-  /**
-   * Reduce resolution and drop effects when the frame budget is blown.
-   *
-   * Every threshold here is hysteretic: an effect needs a clearly better score
-   * to come back than the one that dropped it. With a single threshold each,
-   * a machine sitting near the boundary flipped ambient occlusion, anti-aliasing
-   * and defocus on and off every second or so, and each flip reallocated the
-   * render targets — which is what the visible blinking was.
-   */
-  setQualityScale(scale: number) {
-    if (scale >= 0.90) this.gtao.enabled = true
-    else if (scale <= 0.78) this.gtao.enabled = false
-
-    if (scale >= 0.86) this.smaa.enabled = true
-    else if (scale <= 0.72) this.smaa.enabled = false
-
-    if (scale >= 0.84) this.tiltH.enabled = this.tiltV.enabled = true
-    else if (scale <= 0.70) this.tiltH.enabled = this.tiltV.enabled = false
-
-    const target = Math.max(0.7, Math.min(2, window.devicePixelRatio * scale))
-    // reallocating every render target is itself a visible hitch, so only do it
-    // for a change big enough to be worth it
-    if (Math.abs(target - this.pixelRatioCap) < 0.1) return
-    this.pixelRatioCap = target
+  applyQuality(q: QualitySettings) {
+    this.quality = q
+    saveQuality(q.id)
+    this.gtao.enabled = q.gtao
+    if (q.gtao) {
+      this.gtao.updateGtaoMaterial({
+        radius: 0.42, distanceExponent: 1.6, thickness: 0.55,
+        distanceFallOff: 1.0, scale: 1.1, samples: q.gtaoSamples,
+      })
+      this.gtao.updatePdMaterial({ lumaPhi: 8, depthPhi: 2, normalPhi: 4, radius: 3, rings: 2, samples: q.gtaoDenoise })
+    }
+    this.bloom.enabled = q.bloom
+    this.smaa.enabled = q.smaa
+    this.setTiltShift(q.tilt ? 3.0 : 0)
+    this.renderer.shadowMap.type = q.shadowSoft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap
+    if (this.sun.shadow.mapSize.x !== q.shadowSize) {
+      this.sun.shadow.mapSize.set(q.shadowSize, q.shadowSize)
+      this.sun.shadow.map?.dispose()
+      this.sun.shadow.map = null as unknown as THREE.WebGLRenderTarget
+    }
+    this.markShadowsDirty()
     this.resize()
   }
+
+  markShadowsDirty() { this.shadowDirty = true }
+
+  tickShadows(dt: number) {
+    this.shadowAccum += dt
+    if (this.shadowDirty || this.shadowAccum >= this.quality.shadowInterval) {
+      this.shadowAccum = 0
+      this.shadowDirty = false
+      this.renderer.shadowMap.needsUpdate = true
+    }
+  }
+
+  /**
+   * @deprecated Presets replace the old auto-scaler. Kept as a no-op so leftover callers compile.
+   */
+  setQualityScale(_scale: number) { /* quality is a player preset now */ }
 
   /**
    * Aims the shadow frustum at what the camera is looking at and shrinks it as
@@ -497,6 +532,10 @@ export class Engine {
     this.sun.target.position.set(sx, 0, sz)
     this.sun.target.updateMatrixWorld()
     this.sun.position.copy(this.sunDir).multiplyScalar(70).add(this.sun.target.position)
+    const moved = Math.abs(sx - this.lastFocusX) + Math.abs(sz - this.lastFocusZ)
+    if (moved > 0.6) this.markShadowsDirty()
+    this.lastFocusX = sx
+    this.lastFocusZ = sz
   }
 
   setAOEnabled(on: boolean) { this.gtao.enabled = on }
@@ -552,6 +591,21 @@ export class Engine {
     g.uDesat.value += (this.desat - g.uDesat.value) * Math.min(1, dt * 3)
     g.uTime.value += dt
     this.bloom.strength = 0.7 + this.heat * 1.1
+
+    const needGrade = this.heat > 0.02 || this.desat > 0.02
+    const usePost = this.gtao.enabled || this.bloom.enabled || this.tiltH.enabled || this.smaa.enabled || needGrade
+    if (!usePost) {
+      this.renderer.setRenderTarget(null)
+      this.renderer.render(this.scene, this.camera)
+      return
+    }
     this.composer.render(dt)
+  }
+
+  dispose() {
+    window.removeEventListener('resize', this.onResize)
+    window.visualViewport?.removeEventListener('resize', this.onResize)
+    this.composer.dispose()
+    this.renderer.dispose()
   }
 }
