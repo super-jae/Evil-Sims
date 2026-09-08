@@ -318,4 +318,12 @@ export class Effects {
     for (const l of this.labels) l.el.remove()
     this.labels = []
   }
+
+  dispose() {
+    this.clearLabels()
+    this.labelLayer.remove()
+    this.geo.dispose()
+    ;(this.points.material as THREE.Material).dispose()
+    this.group.removeFromParent()
+  }
 }

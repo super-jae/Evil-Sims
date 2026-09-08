@@ -133,7 +133,7 @@ export class Input {
     private camera: THREE.PerspectiveCamera,
     private rig: CameraRig,
   ) {
-    el.addEventListener('contextmenu', (e) => e.preventDefault())
+    el.addEventListener('contextmenu', this.blockMenu)
     el.addEventListener('pointerdown', this.handleDown)
     window.addEventListener('pointermove', this.handleMove)
     window.addEventListener('pointerup', this.handleUp)
@@ -146,6 +146,8 @@ export class Input {
     el.addEventListener('pointercancel', this.handleCancel)
     window.addEventListener('blur', this.handleCancel)
   }
+
+  private blockMenu = (e: Event) => e.preventDefault()
 
   private setPointer(ev: PointerEvent) {
     const r = this.el.getBoundingClientRect()
@@ -162,7 +164,7 @@ export class Input {
     this.suppressPan = false
     this.lastX = ev.clientX; this.lastY = ev.clientY
     this.downX = ev.clientX; this.downY = ev.clientY
-    this.el.setPointerCapture?.(ev.pointerId)
+    try { this.el.setPointerCapture(ev.pointerId) } catch { /* synthetic / already released */ }
     this.onDown(this.pointer, ev)
   }
 
@@ -244,6 +246,21 @@ export class Input {
     if (k.has('KeyA') || k.has('ArrowLeft')) dx += speed
     if (k.has('KeyD') || k.has('ArrowRight')) dx -= speed
     if (dx || dy) this.rig.pan(dx, dy)
+  }
+
+  dispose() {
+    const el = this.el
+    el.removeEventListener('contextmenu', this.blockMenu)
+    el.removeEventListener('pointerdown', this.handleDown)
+    window.removeEventListener('pointermove', this.handleMove)
+    window.removeEventListener('pointerup', this.handleUp)
+    el.removeEventListener('wheel', this.handleWheel)
+    window.removeEventListener('keydown', this.handleKeyDown)
+    window.removeEventListener('keyup', this.handleKeyUp)
+    el.removeEventListener('pointercancel', this.handleCancel)
+    window.removeEventListener('blur', this.handleCancel)
+    this.keys.clear()
+    this.resetPointer()
   }
 
   /** Where the cursor ray meets the ground plane (y = 0). */

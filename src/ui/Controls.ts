@@ -123,6 +123,9 @@ export class Controls {
         audio.enabled = !audio.enabled
         if (!audio.enabled) audio.stopAllLoops()
         break
+      case 'KeyG':
+        this.ui.cycleQuality()
+        break
       case 'KeyF':
         if (g.selected) g.rig.lookAt(g.selected.pos, 13)
         break

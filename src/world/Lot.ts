@@ -87,11 +87,21 @@ export class Lot {
 
   rebuildFloors() {
     this.floorGroup.clear()
-    const byMat = new Map<number, { pos: number[]; norm: number[]; uv: number[] }>()
+    const byMat = new Map<number, { pos: number[]; norm: number[]; uv: number[]; col: number[] }>()
+
+    const wallShade = (x: number, z: number) => {
+      const i = this.grid.idx(x, z)
+      let n = 0
+      if (this.grid.wallN[i]) n++
+      if (this.grid.wallW[i]) n++
+      if (z + 1 < LOT_H && this.grid.wallN[this.grid.idx(x, z + 1)]) n++
+      if (x + 1 < LOT_W && this.grid.wallW[this.grid.idx(x + 1, z)]) n++
+      return 1 - Math.min(n, 3) * 0.16
+    }
 
     const push = (mat: number, x: number, z: number, y: number, uvScale: number) => {
       let b = byMat.get(mat)
-      if (!b) { b = { pos: [], norm: [], uv: [] }; byMat.set(mat, b) }
+      if (!b) { b = { pos: [], norm: [], uv: [], col: [] }; byMat.set(mat, b) }
       const x0 = (x - LOT_W / 2) * TILE, z0 = (z - LOT_H / 2) * TILE
       const x1 = x0 + TILE, z1 = z0 + TILE
       const quad = [
@@ -102,10 +112,12 @@ export class Lot {
         [x * uvScale, z * uvScale], [x * uvScale, (z + 1) * uvScale], [(x + 1) * uvScale, (z + 1) * uvScale],
         [x * uvScale, z * uvScale], [(x + 1) * uvScale, (z + 1) * uvScale], [(x + 1) * uvScale, z * uvScale],
       ]
+      const s = wallShade(x, z)
       for (let i = 0; i < 6; i++) {
         b.pos.push(quad[i][0], quad[i][1], quad[i][2])
         b.norm.push(0, 1, 0)
         b.uv.push(uvs[i][0], uvs[i][1])
+        b.col.push(s, s, s)
       }
     }
 
@@ -123,8 +135,13 @@ export class Lot {
       geo.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3))
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(b.norm, 3))
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2))
-      const mesh = new THREE.Mesh(geo, mats.floors[matIdx] ?? mats.floors[0])
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3))
+      const base = mats.floors[matIdx] ?? mats.floors[0]
+      const mat = base.clone()
+      mat.vertexColors = true
+      const mesh = new THREE.Mesh(geo, mat)
       mesh.receiveShadow = true
+      mesh.matrixAutoUpdate = false
       mesh.name = `floor-${matIdx}`
       this.floorGroup.add(mesh)
     }

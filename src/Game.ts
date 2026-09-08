@@ -101,6 +101,7 @@ export class Game implements IGame {
   private ghostPreview: THREE.Group | null = null
   private reapers: ReaperVisit[] = []
   private elapsedReal = 0
+  private todAccum = 0
   private timers: { at: number; fn: () => void }[] = []
 
   // UI callbacks, assigned by the UI layer
@@ -643,6 +644,7 @@ export class Game implements IGame {
     if (floors) this.lot.rebuildFloors()
     if (walls) { this.lot.rebuildWalls(); this.grid.recomputeIndoors() }
     if (pool) this.lot.rebuildPool()
+    this.engine.markShadowsDirty()
   }
 
   setWallMode(m: WallMode) { this.lot.wallMode = m }
@@ -779,7 +781,7 @@ export class Game implements IGame {
 
   // ================================================================= loop
 
-  update(dtReal: number) {
+  update(dtReal: number, draw = true) {
     const dt = Math.min(dtReal, 0.05)
     this.elapsedReal += dt
     const dtMin = this.clock.advance(dt)
@@ -788,8 +790,13 @@ export class Game implements IGame {
 
     this.input.update(dt)
     this.rig.update(dt)
-    this.engine.setTimeOfDay(this.clock.hour)
+    this.todAccum += dt
+    if (this.todAccum > 0.25) {
+      this.todAccum = 0
+      this.engine.setTimeOfDay(this.clock.hour)
+    }
     this.engine.setShadowFocus(this.rig.focus.x, this.rig.focus.z, this.rig.distance)
+    this.engine.tickShadows(dt)
 
     if (this.dragging) this.updateDrag()
 
@@ -811,6 +818,8 @@ export class Game implements IGame {
     const anyDeadRecently = this.reapers.length > 0
     audio.setMood(anyDeadRecently ? 'dirge' : this.fire.count > 0 ? 'chaos' : anyPanic ? 'tense' : 'calm')
     audio.update(dt)
+
+    if (!draw) return
 
     const cam = this.engine.camera
     const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0)
@@ -928,5 +937,11 @@ export class Game implements IGame {
       const m = c as THREE.Mesh
       if (m.isMesh) { m.material = mat; m.castShadow = false }
     })
+  }
+
+  dispose() {
+    this.input.dispose()
+    this.engine.dispose()
+    this.fx.dispose()
   }
 }

@@ -39,8 +39,18 @@ export class WorldObject {
     this.root = new THREE.Group()
     const mesh = def.build(this)
     mesh.traverse((c) => {
-      if ((c as THREE.Mesh).isMesh) { c.castShadow = true; c.receiveShadow = true }
+      if ((c as THREE.Mesh).isMesh) {
+        const m = c as THREE.Mesh
+        m.receiveShadow = true
+        if (!m.geometry.boundingBox) m.geometry.computeBoundingBox()
+        const bb = m.geometry.boundingBox
+        const h = bb ? bb.max.y - bb.min.y : 1
+        m.castShadow = h > 0.28
+      }
+      c.matrixAutoUpdate = false
     })
+    mesh.updateMatrixWorld(true)
+    this.root.matrixAutoUpdate = false
     this.root.add(mesh)
     this.root.userData.worldObject = this
     this.syncTransform()
@@ -83,6 +93,8 @@ export class WorldObject {
     const c = this.centerWorld
     this.root.position.set(c.x, 0, c.z)
     this.root.rotation.y = this.rot * (Math.PI / 2)
+    this.root.updateMatrix()
+    this.root.updateMatrixWorld(true)
   }
 
   /** Where a sim stands to use this object, in tile coords. */
@@ -124,6 +136,8 @@ export class WorldObject {
     if (on) {
       this.root.scale.set(1, 0.92, 1)
       this.root.rotation.z = (Math.random() - 0.5) * 0.06
+      this.root.updateMatrix()
+      this.root.updateMatrixWorld(true)
     }
   }
 

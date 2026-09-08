@@ -47,6 +47,7 @@ Requires a WebGL2 browser. There is no server component and no network access.
 | **F** | Center the camera on the selected sim |
 | **C** / **Home** | Center the camera back on the household |
 | **L** | Devious Deeds ledger |
+| **G** | Cycle graphics quality (Low / Medium / High / Ultra) |
 | **M** | Mute |
 | **Esc** | Close menus, cancel placement |
 
@@ -196,14 +197,16 @@ no asset loading (about 40 KB of that is SMAA's lookup textures):
   bloom over the HDR buffer, tilt-shift defocus for the dollhouse framing, SMAA, a
   heat-shimmer grade that responds to how much of the lot is on fire, a custom animated
   water shader with caustics, a GPU particle system and instanced decals for puddles and
-  scorch marks. Resolution scales adaptively to hold frame rate, dropping ambient
-  occlusion, defocus and anti-aliasing first.
+  scorch marks. Frame rate is capped at 60, extra post-process is skipped when unused,
+  and a Low / Medium / High / Ultra preset (G, remembered in localStorage) replaces the
+  old adaptive scaler — High is the desktop default, Medium on phones, Ultra is the
+  previous expensive look.
 
 ## Architecture
 
 ```
 src/
-  core/       Engine (renderer, sky, post) · Input & camera rig · GameClock · AudioEngine · Rand
+  core/       Engine (renderer, sky, post) · Quality presets · Input & camera rig · GameClock · AudioEngine · Rand
   world/      Grid + A* · procedural Materials · Meshes · Catalog (objects & interactions)
               WorldObject · Lot (floor/wall/pool geometry, cutaway)
   sim/        Sim (needs, autonomy, task queue) · SimMesh (rig + animation) · Needs · Traits

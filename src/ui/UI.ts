@@ -12,6 +12,7 @@ import type { NoteKind } from '../types'
 import type { Category } from '../world/ObjectTypes'
 import type { BuildTool } from '../Game'
 import { audio } from '../core/Audio'
+import { nextQualityId, QUALITY } from '../core/Quality'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag)
@@ -63,6 +64,7 @@ export class UI {
   private speedBtns: HTMLButtonElement[] = []
   private modeBtns: HTMLButtonElement[] = []
   private wallBtn!: HTMLButtonElement
+  private qualityBtn!: HTMLButtonElement
 
   private activeCategory: Category = 'kitchen'
   private accum = 0
@@ -155,7 +157,11 @@ export class UI {
       muteBtn.textContent = audio.enabled ? '🔊' : '🔇'
       if (!audio.enabled) audio.stopAllLoops()
     }
-    extras.append(centerBtn, this.wallBtn, ledgerBtn, muteBtn)
+    this.qualityBtn = el('button', 'icon-btn quality-btn') as HTMLButtonElement
+    this.qualityBtn.type = 'button'
+    this.syncQualityBtn()
+    this.qualityBtn.onclick = () => this.cycleQuality()
+    extras.append(centerBtn, this.wallBtn, ledgerBtn, muteBtn, this.qualityBtn)
     right.append(extras, modes)
 
     bar.append(left, center, right)
@@ -271,6 +277,21 @@ export class UI {
     this.wallBtn.textContent = next === 'up' ? '🏠' : next === 'down' ? '🔳' : '🧱'
     this.wallBtn.title = `Walls: ${next}`
     audio.play('click')
+  }
+
+  cycleQuality() {
+    const next = QUALITY[nextQualityId(this.game.engine.quality.id)]
+    this.game.engine.applyQuality(next)
+    this.syncQualityBtn()
+    this.notify(`Graphics: <b>${next.label}</b>${next.highPerformance ? ' — refresh once for the high-performance GPU profile' : ''}`, 'info', '🖥')
+    audio.play('click')
+  }
+
+  private syncQualityBtn() {
+    const q = this.game.engine.quality
+    const glyph: Record<string, string> = { low: 'LQ', medium: 'MQ', high: 'HQ', ultra: 'UQ' }
+    this.qualityBtn.textContent = glyph[q.id] ?? 'HQ'
+    this.qualityBtn.title = `Graphics: ${q.label} (G to cycle)`
   }
 
   // ------------------------------------------------------------------ notify
